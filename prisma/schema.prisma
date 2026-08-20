@@ -1,0 +1,246 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  memberships     Membership[]
+  vaultGrantsMade EmployeeVaultAccess[]
+  vaultAccessLogs VaultAccessLog[]
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  createdAt DateTime @default(now())
+
+  // per-org data-encryption-key for the password vault, wrapped by the app master key
+  encDekWrapped Bytes?
+  encDekNonce   Bytes?
+
+  memberships  Membership[]
+  employees    Employee[]
+  clients      Client[]
+  catalogItems CatalogItem[]
+  orders       Order[]
+  vaultEntries VaultServiceEntry[]
+  tags         Tag[]
+}
+
+model Membership {
+  id     String @id @default(cuid())
+  userId String
+  orgId  String
+  role   Role
+
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, orgId])
+  @@index([orgId])
+}
+
+// Shared status for archivable entities (Employee, Client, CatalogItem, VaultServiceEntry).
+enum EntityStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+model Employee {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  fullName   String
+  position   String?
+  email      String?
+  phone      String?
+  status     EntityStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  ordersAssigned Order[]               @relation("AssignedEmployee")
+  vaultAccess    EmployeeVaultAccess[]
+
+  @@index([orgId, status])
+}
+
+model Client {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  inn        String?
+  phone      String?
+  email      String?
+  status     EntityStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  orders Order[]
+
+  @@index([orgId, status])
+}
+
+enum CatalogItemType {
+  PRODUCT
+  SERVICE
+}
+
+model CatalogItem {
+  id         String          @id @default(cuid())
+  orgId      String
+  org        Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  type       CatalogItemType
+  sku        String?
+  unitPrice  Decimal         @db.Decimal(12, 2)
+  currency   String          @default("RUB")
+  status     EntityStatus    @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime        @default(now())
+
+  lineItems OrderLineItem[]
+
+  @@index([orgId, status])
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number             Int
+  clientId           String?
+  client             Client?      @relation(fields: [clientId], references: [id])
+  assignedEmployeeId String?
+  assignedEmployee   Employee?    @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  status             OrderStatus  @default(DRAFT)
+  createdAt          DateTime     @default(now())
+
+  lineItems OrderLineItem[]
+
+  @@unique([orgId, number])
+  @@index([orgId, status])
+}
+
+model OrderLineItem {
+  id                String      @id @default(cuid())
+  orderId           String
+  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem @relation(fields: [catalogItemId], references: [id])
+  quantity          Decimal     @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal     @db.Decimal(12, 2)
+
+  @@index([orderId])
+}
+
+// --- Password vault ---------------------------------------------------
+// Secrets are encrypted with AES-256-GCM using the organization's DEK
+// (Organization.encDekWrapped, unwrapped via lib/org-dek.ts). Plaintext
+// only ever exists transiently in a Server Action's memory, never at rest,
+// never in a client bundle, never logged.
+
+model VaultServiceEntry {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  serviceName String
+  url         String?
+  username    String?
+  ciphertext  Bytes
+  nonce       Bytes
+  authTag     Bytes
+  notes       String?
+  status      EntityStatus @default(ACTIVE)
+  archivedAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  accessGrants EmployeeVaultAccess[]
+  tags         TagOnVaultEntry[]
+  accessLogs   VaultAccessLog[]
+
+  @@index([orgId, status])
+}
+
+model EmployeeVaultAccess {
+  id           String            @id @default(cuid())
+  employeeId   String
+  employee     Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  vaultEntryId String
+  vaultEntry   VaultServiceEntry @relation(fields: [vaultEntryId], references: [id], onDelete: Cascade)
+  grantedAt    DateTime          @default(now())
+  grantedById  String?
+  grantedBy    User?             @relation(fields: [grantedById], references: [id])
+
+  @@unique([employeeId, vaultEntryId])
+  @@index([vaultEntryId])
+}
+
+enum TagKind {
+  MANUAL
+  EMPLOYEE_ACCESS
+}
+
+model Tag {
+  id               String       @id @default(cuid())
+  orgId            String
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name             String
+  kind             TagKind      @default(MANUAL)
+  sourceEmployeeId String?
+
+  vaultEntries TagOnVaultEntry[]
+
+  @@unique([orgId, name])
+}
+
+model TagOnVaultEntry {
+  tagId        String
+  vaultEntryId String
+  tag          Tag               @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  vaultEntry   VaultServiceEntry @relation(fields: [vaultEntryId], references: [id], onDelete: Cascade)
+
+  @@id([tagId, vaultEntryId])
+}
+
+model VaultAccessLog {
+  id           String            @id @default(cuid())
+  vaultEntryId String
+  vaultEntry   VaultServiceEntry @relation(fields: [vaultEntryId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User              @relation(fields: [userId], references: [id])
+  action       String
+  createdAt    DateTime          @default(now())
+
+  @@index([vaultEntryId])
+}
