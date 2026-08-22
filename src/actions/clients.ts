@@ -18,6 +18,12 @@ function parseClientForm(formData: FormData) {
     inn: formData.get("inn"),
     email: formData.get("email"),
     phone: formData.get("phone"),
+    address: formData.get("address"),
+    kpp: formData.get("kpp"),
+    ogrn: formData.get("ogrn"),
+    bankName: formData.get("bankName"),
+    bankBik: formData.get("bankBik"),
+    bankAccount: formData.get("bankAccount"),
   });
 }
 

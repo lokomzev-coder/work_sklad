@@ -8,7 +8,8 @@ export type Resource =
   | "clients"
   | "catalog"
   | "orders"
-  | "membership";
+  | "membership"
+  | "warehouse";
 
 const RANK: Record<Access, number> = { none: 0, read: 1, edit: 2, full: 3 };
 
@@ -20,6 +21,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     catalog: "full",
     orders: "full",
     membership: "full",
+    warehouse: "full",
   },
   MANAGER: {
     vault: "full",
@@ -28,6 +30,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     catalog: "full",
     orders: "full",
     membership: "read",
+    warehouse: "full",
   },
   EMPLOYEE: {
     vault: "none",
@@ -36,6 +39,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     catalog: "read",
     orders: "edit",
     membership: "none",
+    warehouse: "read",
   },
 };
 

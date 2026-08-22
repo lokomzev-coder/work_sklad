@@ -4,13 +4,15 @@ export type ArchivableEntityType =
   | "employee"
   | "client"
   | "catalogItem"
-  | "vaultServiceEntry";
+  | "vaultServiceEntry"
+  | "store";
 
 const ENTITY_LABEL: Record<ArchivableEntityType, string> = {
   employee: "Сотрудник",
   client: "Клиент",
   catalogItem: "Позиция каталога",
   vaultServiceEntry: "Запись сервиса",
+  store: "Склад",
 };
 
 interface ReferenceCheck {
@@ -24,20 +26,41 @@ async function checkReferences(
 ): Promise<ReferenceCheck> {
   switch (type) {
     case "client": {
-      const count = await prisma.order.count({ where: { clientId: id } });
-      return count > 0
-        ? { referenced: true, reason: `фигурирует в ${count} заказ(ах)` }
-        : { referenced: false };
+      const [orderCount, purchaseOrderCount, paymentCount] = await Promise.all([
+        prisma.order.count({ where: { clientId: id } }),
+        prisma.purchaseOrder.count({ where: { supplierId: id } }),
+        prisma.payment.count({ where: { counterpartyId: id } }),
+      ]);
+      if (orderCount > 0) {
+        return { referenced: true, reason: `фигурирует в ${orderCount} заказ(ах)` };
+      }
+      if (purchaseOrderCount > 0) {
+        return {
+          referenced: true,
+          reason: `указан поставщиком в ${purchaseOrderCount} заказ(ах) поставщику`,
+        };
+      }
+      if (paymentCount > 0) {
+        return { referenced: true, reason: `фигурирует в ${paymentCount} платеж(ах)` };
+      }
+      return { referenced: false };
     }
     case "employee": {
-      const [orderCount, vaultAccessCount] = await Promise.all([
+      const [orderCount, purchaseOrderCount, vaultAccessCount] = await Promise.all([
         prisma.order.count({ where: { assignedEmployeeId: id } }),
+        prisma.purchaseOrder.count({ where: { assignedEmployeeId: id } }),
         prisma.employeeVaultAccess.count({ where: { employeeId: id } }),
       ]);
       if (orderCount > 0) {
         return {
           referenced: true,
           reason: `назначен ответственным в ${orderCount} заказ(ах)`,
+        };
+      }
+      if (purchaseOrderCount > 0) {
+        return {
+          referenced: true,
+          reason: `назначен ответственным в ${purchaseOrderCount} заказ(ах) поставщику`,
         };
       }
       if (vaultAccessCount > 0) {
@@ -49,12 +72,28 @@ async function checkReferences(
       return { referenced: false };
     }
     case "catalogItem": {
-      const count = await prisma.orderLineItem.count({
-        where: { catalogItemId: id },
-      });
-      return count > 0
-        ? { referenced: true, reason: `используется в ${count} позици(ях) заказов` }
-        : { referenced: false };
+      const [orderCount, purchaseOrderCount, bundleCount, movementCount] = await Promise.all([
+        prisma.orderLineItem.count({ where: { catalogItemId: id } }),
+        prisma.purchaseOrderLineItem.count({ where: { catalogItemId: id } }),
+        prisma.catalogItemComponent.count({ where: { componentId: id } }),
+        prisma.stockMovementLine.count({ where: { catalogItemId: id } }),
+      ]);
+      if (orderCount > 0) {
+        return { referenced: true, reason: `используется в ${orderCount} позици(ях) заказов` };
+      }
+      if (purchaseOrderCount > 0) {
+        return {
+          referenced: true,
+          reason: `используется в ${purchaseOrderCount} позици(ях) заказов поставщику`,
+        };
+      }
+      if (bundleCount > 0) {
+        return { referenced: true, reason: `входит в состав ${bundleCount} комплект(ов)` };
+      }
+      if (movementCount > 0) {
+        return { referenced: true, reason: `фигурирует в ${movementCount} складск(их) движени(ях)` };
+      }
+      return { referenced: false };
     }
     case "vaultServiceEntry": {
       const count = await prisma.employeeVaultAccess.count({
@@ -62,6 +101,14 @@ async function checkReferences(
       });
       return count > 0
         ? { referenced: true, reason: `доступ выдан ${count} сотрудник(ам)` }
+        : { referenced: false };
+    }
+    case "store": {
+      const count = await prisma.stockMovement.count({
+        where: { OR: [{ storeId: id }, { toStoreId: id }] },
+      });
+      return count > 0
+        ? { referenced: true, reason: `по складу проведено ${count} движени(й)` }
         : { referenced: false };
     }
   }
@@ -102,6 +149,9 @@ export async function archiveOrDelete(
       case "vaultServiceEntry":
         await prisma.vaultServiceEntry.delete({ where: { id, orgId } });
         break;
+      case "store":
+        await prisma.store.delete({ where: { id, orgId } });
+        break;
     }
     return { deleted: true };
   }
@@ -127,6 +177,12 @@ export async function archiveOrDelete(
       break;
     case "vaultServiceEntry":
       await prisma.vaultServiceEntry.update({
+        where: { id, orgId },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      break;
+    case "store":
+      await prisma.store.update({
         where: { id, orgId },
         data: { status: "ARCHIVED", archivedAt: new Date() },
       });

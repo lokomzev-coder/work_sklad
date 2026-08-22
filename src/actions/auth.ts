@@ -27,6 +27,7 @@ export async function registerAction(
 ): Promise<ActionResult> {
   const parsed = registerSchema.safeParse({
     name: formData.get("name"),
+    login: formData.get("login"),
     email: formData.get("email"),
     password: formData.get("password"),
     orgName: formData.get("orgName"),
@@ -36,7 +37,7 @@ export async function registerAction(
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
 
-  const { name, email, password, orgName } = parsed.data;
+  const { name, login, email, password, orgName } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -59,11 +60,15 @@ export async function registerAction(
       data: { name: orgName, slug, encDekWrapped: wrapped, encDekNonce: nonce },
     });
     await tx.membership.create({
-      data: { userId: user.id, orgId: org.id, role: "ADMIN" },
+      data: { userId: user.id, orgId: org.id, role: "ADMIN", login },
     });
   });
 
-  await signIn("credentials", { email, password, redirectTo: `/${slug}` });
+  await signIn("credentials", {
+    loginId: `${login}@${slug}`,
+    password,
+    redirectTo: `/${slug}`,
+  });
   return {};
 }
 
@@ -72,7 +77,7 @@ export async function loginAction(
   formData: FormData,
 ): Promise<ActionResult> {
   const parsed = loginSchema.safeParse({
-    email: formData.get("email"),
+    loginId: formData.get("loginId"),
     password: formData.get("password"),
   });
 
@@ -82,13 +87,13 @@ export async function loginAction(
 
   try {
     await signIn("credentials", {
-      email: parsed.data.email,
+      loginId: parsed.data.loginId,
       password: parsed.data.password,
       redirectTo: "/",
     });
   } catch (err) {
     if (err instanceof Error && err.name === "CredentialsSignin") {
-      return { error: "Неверный email или пароль" };
+      return { error: "Неверный логин или пароль" };
     }
     throw err;
   }

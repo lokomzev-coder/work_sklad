@@ -10,6 +10,7 @@ import {
   type EntityStatusFilter,
 } from "@/components/data-table/archivable-entity-table";
 import { ArchiveRowActions } from "@/components/data-table/archive-row-actions";
+import { CatalogSubnav } from "@/components/catalog/catalog-subnav";
 import {
   archiveCatalogItem,
   restoreCatalogItem,
@@ -19,6 +20,7 @@ import {
 const TYPE_LABEL: Record<string, string> = {
   PRODUCT: "Товар",
   SERVICE: "Услуга",
+  BUNDLE: "Комплект",
 };
 
 export default async function CatalogPage({
@@ -38,12 +40,14 @@ export default async function CatalogPage({
   const items = await prisma.catalogItem.findMany({
     where: { orgId: ctx.orgId, status: activeTab },
     orderBy: { createdAt: "desc" },
+    include: { group: true },
   });
 
   const canEdit = can(ctx.role, "catalog", "edit");
 
   return (
     <div className="flex flex-col gap-4">
+      <CatalogSubnav org={org} active="catalog" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Товары и услуги</h1>
         {canEdit && (
@@ -70,6 +74,7 @@ export default async function CatalogPage({
             ),
           },
           { header: "Артикул", cell: (row) => row.sku ?? "—" },
+          { header: "Группа", cell: (row) => row.group?.name ?? "—" },
           {
             header: "Цена",
             cell: (row) => `${row.unitPrice.toString()} ${row.currency}`,

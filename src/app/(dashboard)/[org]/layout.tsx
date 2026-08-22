@@ -1,14 +1,22 @@
 import { getOrgContext } from "@/lib/tenant";
+import { auth } from "@/lib/auth";
 import { logoutAction } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { OrgSidebarNav, type NavItem } from "@/components/layout/org-sidebar-nav";
+import { OrgSwitcher } from "@/components/layout/org-switcher";
+import { CommandPalette } from "@/components/layout/command-palette";
 
 const NAV_ITEMS: NavItem[] = [
   { href: "", label: "Дашборд" },
   { href: "/employees", label: "Сотрудники" },
   { href: "/clients", label: "Клиенты" },
   { href: "/catalog", label: "Товары и услуги" },
+  { href: "/warehouse", label: "Склад" },
   { href: "/orders", label: "Заказы" },
+  { href: "/purchase-orders", label: "Заказы поставщику" },
+  { href: "/payments", label: "Платежи" },
+  { href: "/contracts", label: "Договоры" },
+  { href: "/reports", label: "Отчёты" },
   { href: "/vault", label: "Пароли" },
 ];
 
@@ -21,6 +29,8 @@ export default async function OrgLayout({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  const session = await auth();
+  const memberships = session?.memberships ?? [];
 
   const navItems = NAV_ITEMS.filter(
     (item) => item.href !== "/vault" || ctx.role !== "EMPLOYEE",
@@ -29,26 +39,22 @@ export default async function OrgLayout({
   return (
     <div className="flex min-h-svh">
       <aside className="flex w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground p-4">
-        <div className="mb-6 flex items-center gap-2.5 px-1">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
-            {ctx.orgName.charAt(0).toUpperCase()}
-          </div>
-          <span className="truncate text-sm font-semibold">
-            {ctx.orgName}
-          </span>
-        </div>
+        <OrgSwitcher memberships={memberships} currentOrgSlug={org} />
         <OrgSidebarNav org={org} items={navItems} />
       </aside>
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b px-6 py-3">
-          <span className="text-sm text-muted-foreground">
-            Роль: {ctx.role}
-          </span>
-          <form action={logoutAction}>
-            <Button type="submit" variant="outline" size="sm">
-              Выйти
-            </Button>
-          </form>
+          <CommandPalette orgSlug={org} />
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">
+              Роль: {ctx.role}
+            </span>
+            <form action={logoutAction}>
+              <Button type="submit" variant="outline" size="sm">
+                Выйти
+              </Button>
+            </form>
+          </div>
         </header>
         <main className="flex-1 bg-muted/30 p-6">{children}</main>
       </div>

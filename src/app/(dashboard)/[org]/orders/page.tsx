@@ -12,6 +12,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { OrdersSubnav } from "@/components/orders/orders-subnav";
 
 const STATUS_LABEL: Record<string, string> = {
   DRAFT: "Черновик",
@@ -38,6 +39,7 @@ export default async function OrdersPage({
 
   return (
     <div className="flex flex-col gap-4">
+      <OrdersSubnav org={org} active="orders" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказы</h1>
         {canEdit && (

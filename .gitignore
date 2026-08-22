@@ -44,3 +44,6 @@ next-env.d.ts
 /.claude/settings.local.json
 
 /src/generated/prisma
+
+# playwright MCP browser tool artifacts (screenshots, console/network logs)
+/.playwright-mcp/

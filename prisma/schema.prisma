@@ -40,13 +40,22 @@ model Organization {
   encDekWrapped Bytes?
   encDekNonce   Bytes?
 
-  memberships  Membership[]
-  employees    Employee[]
-  clients      Client[]
-  catalogItems CatalogItem[]
-  orders       Order[]
-  vaultEntries VaultServiceEntry[]
-  tags         Tag[]
+  memberships     Membership[]
+  employees       Employee[]
+  clients         Client[]
+  catalogItems    CatalogItem[]
+  catalogGroups   CatalogGroup[]
+  units           Unit[]
+  characteristics Characteristic[]
+  orders          Order[]
+  purchaseOrders  PurchaseOrder[]
+  payments        Payment[]
+  vaultEntries    VaultServiceEntry[]
+  tags            Tag[]
+  stores          Store[]
+  stockMovements  StockMovement[]
+  salesChannels   SalesChannel[]
+  contracts       Contract[]
 }
 
 model Membership {
@@ -54,11 +63,19 @@ model Membership {
   userId String
   orgId  String
   role   Role
+  // Sign-in identifier scoped to this org, МойСклад-style: shown/typed as
+  // "login@orgSlug" (see lib/slug.ts for the org half). Unique only within
+  // the org, not globally — the same physical person can have different
+  // logins in different orgs. Password still lives on User (one password
+  // per human across all their org memberships); only the identifier that
+  // resolves *which* Membership/User to check it against is per-org.
+  login  String
 
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId])
+  @@unique([orgId, login])
   @@index([orgId])
 }
 
@@ -80,8 +97,9 @@ model Employee {
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
 
-  ordersAssigned Order[]               @relation("AssignedEmployee")
-  vaultAccess    EmployeeVaultAccess[]
+  ordersAssigned         Order[]               @relation("AssignedEmployee")
+  purchaseOrdersAssigned PurchaseOrder[]       @relation("AssignedEmployeePO")
+  vaultAccess            EmployeeVaultAccess[]
 
   @@index([orgId, status])
 }
@@ -94,18 +112,113 @@ model Client {
   inn        String?
   phone      String?
   email      String?
+  address    String?
+  // Legal/banking requisites (D4) — optional, only meaningful for
+  // organization counterparties, not individuals.
+  kpp        String?
+  ogrn       String?
+  bankName   String?
+  bankBik    String?
+  bankAccount String?
   status     EntityStatus @default(ACTIVE)
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
 
-  orders Order[]
+  orders         Order[]
+  purchaseOrders PurchaseOrder[] @relation("Supplier")
+  payments       Payment[]
+  contacts       ClientContact[]
+  contracts      Contract[]
 
   @@index([orgId, status])
+}
+
+// Additional contact persons for a Client (D4) — a counterparty commonly has
+// more than one person you deal with (accountant, purchasing manager...).
+model ClientContact {
+  id       String  @id @default(cuid())
+  clientId String
+  client   Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  name     String
+  position String?
+  phone    String?
+  email    String?
+
+  @@index([clientId])
+}
+
+// A contract governing one or more orders/purchase orders with a
+// counterparty (D2) — deliberately minimal (just a reference + optional
+// number/date), not a document-management system.
+model Contract {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientId  String
+  client    Client       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  number    String
+  signedAt  DateTime?
+  createdAt DateTime     @default(now())
+
+  orders         Order[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([orgId])
+  @@index([clientId])
+}
+
+// Sales channel tag on an Order (D3) — e.g. "Розница"/"Опт"/"Маркетплейс",
+// for reporting only, no behavioural difference between channels yet.
+model SalesChannel {
+  id    String @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name  String
+
+  orders Order[]
+
+  @@unique([orgId, name])
 }
 
 enum CatalogItemType {
   PRODUCT
   SERVICE
+  BUNDLE
+}
+
+// Reference dictionary of measurement units (шт, кг, м² и т.д.), scoped per
+// organization so each org can maintain its own list. Never archived — if a
+// unit is referenced by a CatalogItem, deletion is blocked in the action
+// layer (and backstopped by onDelete: Restrict below).
+model Unit {
+  id        String   @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  shortName String
+  createdAt DateTime @default(now())
+
+  catalogItems CatalogItem[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+// Hierarchical product-group folders (МойСклад's productFolder). Also never
+// archived — deletion is blocked in the action layer if it still holds
+// subgroups or catalog items.
+model CatalogGroup {
+  id       String  @id @default(cuid())
+  orgId    String
+  org      Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name     String
+  parentId String?
+  parent   CatalogGroup?  @relation("CatalogGroupChildren", fields: [parentId], references: [id], onDelete: Restrict)
+  children CatalogGroup[] @relation("CatalogGroupChildren")
+
+  catalogItems CatalogItem[]
+
+  @@index([orgId, parentId])
 }
 
 model CatalogItem {
@@ -115,15 +228,183 @@ model CatalogItem {
   name       String
   type       CatalogItemType
   sku        String?
+  barcode    String?
   unitPrice  Decimal         @db.Decimal(12, 2)
   currency   String          @default("RUB")
+  unitId     String?
+  unit       Unit?           @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  groupId    String?
+  group      CatalogGroup?   @relation(fields: [groupId], references: [id], onDelete: Restrict)
   status     EntityStatus    @default(ACTIVE)
   archivedAt DateTime?
   createdAt  DateTime        @default(now())
 
-  lineItems OrderLineItem[]
+  lineItems              OrderLineItem[]
+  purchaseOrderLineItems PurchaseOrderLineItem[]
+  bundleComponents       CatalogItemComponent[] @relation("BundleComponents")
+  partOfBundles          CatalogItemComponent[] @relation("ComponentOfBundles")
+  stockMovementLines     StockMovementLine[]
+  variants               CatalogItemVariant[]
 
   @@index([orgId, status])
+  @@index([orgId, groupId])
+}
+
+// A characteristic dictionary (e.g. "Размер", "Цвет") — org-scoped, reused
+// across variants of different products, same pattern as Unit/CatalogGroup.
+model Characteristic {
+  id    String @id @default(cuid())
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name  String
+
+  values CatalogItemVariantValue[]
+
+  @@unique([orgId, name])
+}
+
+// A modification of a PRODUCT-type CatalogItem (e.g. "Стул, размер L,
+// цвет красный") — own SKU/barcode/optional price override. Deliberately
+// scoped WITHOUT its own stock ledger for this pass: stock is still tracked
+// only at the base CatalogItem level (see lib/stock.ts) — variant-level
+// stock granularity is a real follow-up, not implemented yet, to avoid
+// reworking the ledger and every fulfilment flow in the same change.
+model CatalogItemVariant {
+  id            String       @id @default(cuid())
+  catalogItemId String
+  catalogItem   CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  sku           String?
+  barcode       String?
+  priceOverride Decimal?     @db.Decimal(12, 2)
+  status        EntityStatus @default(ACTIVE)
+  archivedAt    DateTime?
+  createdAt     DateTime     @default(now())
+
+  values    CatalogItemVariantValue[]
+  lineItems OrderLineItem[]
+
+  @@index([catalogItemId, status])
+}
+
+model CatalogItemVariantValue {
+  id               String             @id @default(cuid())
+  variantId        String
+  variant          CatalogItemVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  characteristicId String
+  characteristic   Characteristic     @relation(fields: [characteristicId], references: [id], onDelete: Restrict)
+  value            String
+
+  @@unique([variantId, characteristicId])
+}
+
+// A BUNDLE-type CatalogItem is composed of other (non-bundle) catalog items
+// sold together at the bundle's own fixed price — МойСклад's `bundle`. No
+// nested bundles: a component's type must not be BUNDLE (enforced in
+// actions/catalog-bundles.ts, since Prisma can't express that constraint).
+model CatalogItemComponent {
+  id          String      @id @default(cuid())
+  bundleId    String
+  bundle      CatalogItem @relation("BundleComponents", fields: [bundleId], references: [id], onDelete: Cascade)
+  componentId String
+  component   CatalogItem @relation("ComponentOfBundles", fields: [componentId], references: [id], onDelete: Restrict)
+  quantity    Decimal     @db.Decimal(12, 3)
+
+  @@unique([bundleId, componentId])
+  @@index([bundleId])
+}
+
+// --- Warehouses & stock -------------------------------------------------
+// Stock is never stored as a mutable balance — it's always derived from the
+// StockMovementLine ledger (see lib/stock.ts), so it can't drift out of sync
+// with its own history. ENTER/INVENTORY lines add `quantity` to storeId,
+// LOSS/MOVE subtract it from storeId; MOVE additionally adds it to toStoreId.
+// For INVENTORY, `quantity` is the signed delta (counted - system balance at
+// posting time), computed server-side; `countedQuantity` keeps the raw
+// count the user entered, for display only.
+
+model Store {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  address    String?
+  status     EntityStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  movementsAsSource      StockMovement[] @relation("SourceStore")
+  movementsAsDestination StockMovement[] @relation("DestinationStore")
+
+  @@index([orgId, status])
+}
+
+// DEMAND (отгрузка) and SUPPLY (приёмка) are the document-driven counterparts
+// of LOSS/ENTER: DEMAND fulfils a customer Order and subtracts stock like
+// LOSS; SUPPLY fulfils a PurchaseOrder and adds stock like ENTER.
+// SALES_RETURN/PURCHASE_RETURN are their mirror images: a client returning
+// goods behaves like ENTER (capped by how much was actually demanded and not
+// yet returned), a return to a supplier behaves like LOSS (capped by how
+// much was actually supplied and not yet returned). Routing all of this
+// through one ledger (rather than separate mechanisms) means lib/stock.ts
+// never needs to know about Orders/PurchaseOrders at all — it only ever
+// reasons about the CASE below.
+enum StockMovementType {
+  ENTER
+  LOSS
+  MOVE
+  INVENTORY
+  DEMAND
+  SUPPLY
+  SALES_RETURN
+  PURCHASE_RETURN
+}
+
+// Movements are immutable once created — a mistake is corrected with another
+// (reversing) movement, not by editing history, same principle as ledger
+// entries in accounting systems.
+model StockMovement {
+  id              String            @id @default(cuid())
+  orgId           String
+  org             Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type            StockMovementType
+  number          Int
+  storeId         String
+  store           Store             @relation("SourceStore", fields: [storeId], references: [id], onDelete: Restrict)
+  toStoreId       String?
+  toStore         Store?            @relation("DestinationStore", fields: [toStoreId], references: [id], onDelete: Restrict)
+  comment         String?
+  createdAt       DateTime          @default(now())
+  // Only set for type = DEMAND / SUPPLY respectively — the document this
+  // movement fulfils, for traceability ("which shipments came out of this
+  // order?").
+  orderId         String?
+  order           Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+
+  lines StockMovementLine[]
+
+  @@unique([orgId, number])
+  @@index([orgId, type])
+  @@index([orderId])
+  @@index([purchaseOrderId])
+}
+
+model StockMovementLine {
+  id                String        @id @default(cuid())
+  movementId        String
+  movement          StockMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  quantity          Decimal       @db.Decimal(12, 3)
+  countedQuantity   Decimal?      @db.Decimal(12, 3)
+  // Sale price (DEMAND) or purchase cost (SUPPLY) snapshotted at posting
+  // time — same reasoning as OrderLineItem.unitPriceSnapshot: later catalog
+  // price edits must not retroactively change historical documents.
+  unitPriceSnapshot Decimal?      @db.Decimal(12, 2)
+
+  @@index([movementId])
+  @@index([catalogItemId])
 }
 
 enum OrderStatus {
@@ -142,25 +423,102 @@ model Order {
   client             Client?      @relation(fields: [clientId], references: [id])
   assignedEmployeeId String?
   assignedEmployee   Employee?    @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  contractId         String?
+  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  salesChannelId     String?
+  salesChannel       SalesChannel? @relation(fields: [salesChannelId], references: [id], onDelete: SetNull)
   status             OrderStatus  @default(DRAFT)
   createdAt          DateTime     @default(now())
 
   lineItems OrderLineItem[]
+  demands   StockMovement[]
+  payments  Payment[]
 
   @@unique([orgId, number])
   @@index([orgId, status])
 }
 
 model OrderLineItem {
-  id                String      @id @default(cuid())
+  id                String              @id @default(cuid())
   orderId           String
-  order             Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order             Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   catalogItemId     String
-  catalogItem       CatalogItem @relation(fields: [catalogItemId], references: [id])
-  quantity          Decimal     @db.Decimal(12, 3)
-  unitPriceSnapshot Decimal     @db.Decimal(12, 2)
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
 
   @@index([orderId])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id                 String              @id @default(cuid())
+  orgId              String
+  org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number             Int
+  supplierId         String?
+  supplier           Client?             @relation("Supplier", fields: [supplierId], references: [id])
+  assignedEmployeeId String?
+  assignedEmployee   Employee?           @relation("AssignedEmployeePO", fields: [assignedEmployeeId], references: [id])
+  contractId         String?
+  contract           Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  status             PurchaseOrderStatus @default(DRAFT)
+  createdAt          DateTime            @default(now())
+
+  lineItems PurchaseOrderLineItem[]
+  supplies  StockMovement[]
+  payments  Payment[]
+
+  @@unique([orgId, number])
+  @@index([orgId, status])
+}
+
+model PurchaseOrderLineItem {
+  id                String        @id @default(cuid())
+  purchaseOrderId   String
+  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem   @relation(fields: [catalogItemId], references: [id])
+  quantity          Decimal       @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal       @db.Decimal(12, 2)
+
+  @@index([purchaseOrderId])
+}
+
+enum PaymentDirection {
+  IN
+  OUT
+}
+
+// A minimal money ledger — enough to answer "who owes us / who do we owe"
+// (lib/balances.ts) without modeling full invoices yet (ROADMAP Block C3
+// still needs InvoiceIn/InvoiceOut/Prepayment as a separate follow-up).
+model Payment {
+  id              String           @id @default(cuid())
+  orgId           String
+  org             Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  direction       PaymentDirection
+  amount          Decimal          @db.Decimal(12, 2)
+  currency        String           @default("RUB")
+  counterpartyId  String
+  counterparty    Client           @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
+  orderId         String?
+  order           Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  comment         String?
+  createdAt       DateTime         @default(now())
+
+  @@index([orgId])
+  @@index([counterpartyId])
 }
 
 // --- Password vault ---------------------------------------------------

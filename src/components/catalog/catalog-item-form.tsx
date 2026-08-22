@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,19 +13,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  EntityCombobox,
+  type ComboboxOption,
+} from "@/components/forms/entity-combobox";
 import type { ActionResult } from "@/actions/catalog";
 
 const initialState: ActionResult = {};
+const NONE_VALUE = "__none__";
+// Base UI's <Select.Value> renders the raw value unless the root is given an
+// `items` value->label map — without it, selecting "PRODUCT" would literally
+// display the text "PRODUCT" instead of "Товар".
+const TYPE_ITEMS = { PRODUCT: "Товар", SERVICE: "Услуга", BUNDLE: "Комплект" };
 
 interface CatalogItemFormProps {
   orgSlug: string;
   action: (prevState: ActionResult, formData: FormData) => Promise<ActionResult>;
+  unitOptions: ComboboxOption[];
+  groupOptions: ComboboxOption[];
   defaultValues?: {
     name: string;
-    type: "PRODUCT" | "SERVICE";
+    type: "PRODUCT" | "SERVICE" | "BUNDLE";
     sku: string | null;
+    barcode: string | null;
     unitPrice: string | number;
     currency: string;
+    unitId: string | null;
+    groupId: string | null;
   };
   submitLabel: string;
 }
@@ -33,10 +47,15 @@ interface CatalogItemFormProps {
 export function CatalogItemForm({
   orgSlug,
   action,
+  unitOptions,
+  groupOptions,
   defaultValues,
   submitLabel,
 }: CatalogItemFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
+  const [groupId, setGroupId] = useState<string | null>(
+    defaultValues?.groupId ?? null,
+  );
 
   return (
     <form action={formAction}>
@@ -53,19 +72,38 @@ export function CatalogItemForm({
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="type">Тип</Label>
-            <Select name="type" defaultValue={defaultValues?.type ?? "PRODUCT"}>
+            <Select
+              name="type"
+              items={TYPE_ITEMS}
+              defaultValue={defaultValues?.type ?? "PRODUCT"}
+            >
               <SelectTrigger id="type" className="w-full">
                 <SelectValue placeholder="Выберите тип" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="PRODUCT">Товар</SelectItem>
                 <SelectItem value="SERVICE">Услуга</SelectItem>
+                <SelectItem value="BUNDLE">Комплект</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="sku">Артикул</Label>
-            <Input id="sku" name="sku" defaultValue={defaultValues?.sku ?? ""} />
+          <div className="flex gap-4">
+            <div className="flex flex-1 flex-col gap-2">
+              <Label htmlFor="sku">Артикул</Label>
+              <Input
+                id="sku"
+                name="sku"
+                defaultValue={defaultValues?.sku ?? ""}
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-2">
+              <Label htmlFor="barcode">Штрихкод</Label>
+              <Input
+                id="barcode"
+                name="barcode"
+                defaultValue={defaultValues?.barcode ?? ""}
+              />
+            </div>
           </div>
           <div className="flex gap-4">
             <div className="flex flex-1 flex-col gap-2">
@@ -88,6 +126,41 @@ export function CatalogItemForm({
                 defaultValue={defaultValues?.currency ?? "RUB"}
               />
             </div>
+            <div className="flex w-40 flex-col gap-2">
+              <Label htmlFor="unitId">Единица</Label>
+              <Select
+                name="unitId"
+                items={{
+                  [NONE_VALUE]: "—",
+                  ...Object.fromEntries(unitOptions.map((o) => [o.value, o.label])),
+                }}
+                defaultValue={defaultValues?.unitId ?? NONE_VALUE}
+              >
+                <SelectTrigger id="unitId" className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>—</SelectItem>
+                  {unitOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Группа</Label>
+            <input type="hidden" name="groupId" value={groupId ?? ""} />
+            <EntityCombobox
+              options={groupOptions}
+              value={groupId}
+              onChange={setGroupId}
+              placeholder="Без группы"
+              searchPlaceholder="Поиск группы..."
+              emptyMessage="Группы не найдены"
+            />
           </div>
           {state.error && (
             <p className="text-sm text-destructive">{state.error}</p>

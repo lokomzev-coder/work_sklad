@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { OrderForm } from "@/components/orders/order-form";
+import { variantLabel } from "@/lib/catalog-variants";
 
 export default async function NewOrderPage({
   params,
@@ -10,7 +11,7 @@ export default async function NewOrderPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [clients, employees, catalogItems] = await Promise.all([
+  const [clients, employees, catalogItems, contracts, salesChannels] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
@@ -22,7 +23,15 @@ export default async function NewOrderPage({
     prisma.catalogItem.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
+      include: {
+        variants: {
+          where: { status: "ACTIVE" },
+          include: { values: { include: { characteristic: true } } },
+        },
+      },
     }),
+    prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+    prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -41,7 +50,14 @@ export default async function NewOrderPage({
           name: c.name,
           unitPrice: c.unitPrice.toString(),
           currency: c.currency,
+          variants: c.variants.map((v) => ({
+            id: v.id,
+            label: variantLabel(v.values) || (v.sku ?? v.id),
+            price: v.priceOverride?.toString() ?? null,
+          })),
         }))}
+        contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
+        salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
       />
     </div>
   );

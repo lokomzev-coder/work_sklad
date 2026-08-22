@@ -13,13 +13,37 @@ export interface ActionResult {
 }
 
 function parseCatalogItemForm(formData: FormData) {
+  const unitId = formData.get("unitId");
   return catalogItemSchema.safeParse({
     name: formData.get("name"),
     type: formData.get("type"),
     sku: formData.get("sku"),
+    barcode: formData.get("barcode"),
     unitPrice: formData.get("unitPrice"),
     currency: formData.get("currency") || "RUB",
+    unitId: unitId === "__none__" ? "" : unitId,
+    groupId: formData.get("groupId"),
   });
+}
+
+// unitId/groupId come from client-controlled <select> values — confirm they
+// actually belong to this org before writing, otherwise a crafted form
+// submission could link a catalog item to another org's unit/group.
+async function assertRefsBelongToOrg(
+  orgId: string,
+  unitId: string | undefined,
+  groupId: string | undefined,
+) {
+  if (unitId) {
+    const unit = await prisma.unit.findFirst({ where: { id: unitId, orgId } });
+    if (!unit) throw new Error("Единица измерения не найдена");
+  }
+  if (groupId) {
+    const group = await prisma.catalogGroup.findFirst({
+      where: { id: groupId, orgId },
+    });
+    if (!group) throw new Error("Группа не найдена");
+  }
 }
 
 export async function createCatalogItem(
@@ -34,6 +58,7 @@ export async function createCatalogItem(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
+  await assertRefsBelongToOrg(ctx.orgId, parsed.data.unitId, parsed.data.groupId);
 
   await prisma.catalogItem.create({
     data: { ...parsed.data, orgId: ctx.orgId },
@@ -56,10 +81,15 @@ export async function updateCatalogItem(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
+  await assertRefsBelongToOrg(ctx.orgId, parsed.data.unitId, parsed.data.groupId);
 
   await prisma.catalogItem.update({
     where: { id: itemId, orgId: ctx.orgId },
-    data: parsed.data,
+    data: {
+      ...parsed.data,
+      unitId: parsed.data.unitId ?? null,
+      groupId: parsed.data.groupId ?? null,
+    },
   });
 
   revalidatePath(`/${orgSlug}/catalog`);

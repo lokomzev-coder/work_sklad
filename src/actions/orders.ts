@@ -9,19 +9,24 @@ import type { OrderStatus } from "@/generated/prisma/enums";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
+  variantId: z.string().min(1).nullable().optional(),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
 });
 
 const upsertOrderSchema = z.object({
   clientId: z.string().min(1).nullable(),
   assignedEmployeeId: z.string().min(1).nullable(),
+  contractId: z.string().min(1).nullable().optional(),
+  salesChannelId: z.string().min(1).nullable().optional(),
   lineItems: z.array(lineItemSchema).min(1, "Добавьте хотя бы одну позицию"),
 });
 
 export interface UpsertOrderInput {
   clientId: string | null;
   assignedEmployeeId: string | null;
-  lineItems: { catalogItemId: string; quantity: number }[];
+  contractId?: string | null;
+  salesChannelId?: string | null;
+  lineItems: { catalogItemId: string; variantId?: string | null; quantity: number }[];
 }
 
 export interface UpsertOrderResult {
@@ -62,13 +67,50 @@ export async function upsertOrder(
   }
   const priceById = new Map(catalogItems.map((c) => [c.id, c.unitPrice]));
 
-  const lineItemsCreateData = parsed.data.lineItems.map((li) => ({
-    catalogItemId: li.catalogItemId,
-    quantity: li.quantity,
-    // price is snapshotted at order time, so later catalog price edits
-    // don't retroactively change already-placed orders
-    unitPriceSnapshot: priceById.get(li.catalogItemId)!,
-  }));
+  const variantIds = [
+    ...new Set(parsed.data.lineItems.map((li) => li.variantId).filter((v): v is string => !!v)),
+  ];
+  const variants = variantIds.length
+    ? await prisma.catalogItemVariant.findMany({ where: { id: { in: variantIds } } })
+    : [];
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+  for (const li of parsed.data.lineItems) {
+    if (li.variantId) {
+      const variant = variantById.get(li.variantId);
+      if (!variant || variant.catalogItemId !== li.catalogItemId) {
+        return { error: "Модификация не найдена" };
+      }
+    }
+  }
+
+  if (parsed.data.contractId) {
+    const contract = await prisma.contract.findFirst({
+      where: { id: parsed.data.contractId, orgId: ctx.orgId },
+    });
+    if (!contract) {
+      return { error: "Договор не найден" };
+    }
+  }
+  if (parsed.data.salesChannelId) {
+    const channel = await prisma.salesChannel.findFirst({
+      where: { id: parsed.data.salesChannelId, orgId: ctx.orgId },
+    });
+    if (!channel) {
+      return { error: "Канал продаж не найден" };
+    }
+  }
+
+  const lineItemsCreateData = parsed.data.lineItems.map((li) => {
+    const variant = li.variantId ? variantById.get(li.variantId) : undefined;
+    return {
+      catalogItemId: li.catalogItemId,
+      variantId: li.variantId ?? undefined,
+      quantity: li.quantity,
+      // price is snapshotted at order time, so later catalog price edits
+      // don't retroactively change already-placed orders
+      unitPriceSnapshot: variant?.priceOverride ?? priceById.get(li.catalogItemId)!,
+    };
+  });
 
   let orderIdResult: string;
 
@@ -80,6 +122,8 @@ export async function upsertOrder(
         data: {
           clientId: parsed.data.clientId,
           assignedEmployeeId: parsed.data.assignedEmployeeId,
+          contractId: parsed.data.contractId ?? null,
+          salesChannelId: parsed.data.salesChannelId ?? null,
           lineItems: { create: lineItemsCreateData },
         },
       }),
@@ -95,6 +139,8 @@ export async function upsertOrder(
         number,
         clientId: parsed.data.clientId,
         assignedEmployeeId: parsed.data.assignedEmployeeId,
+        contractId: parsed.data.contractId ?? null,
+        salesChannelId: parsed.data.salesChannelId ?? null,
         lineItems: { create: lineItemsCreateData },
       },
     });

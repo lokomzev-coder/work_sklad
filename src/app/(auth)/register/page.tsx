@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { registerAction, type ActionResult } from "@/actions/auth";
+import { slugify } from "@/lib/slug";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,11 @@ export default function RegisterPage() {
     registerAction,
     initialState,
   );
+  const [orgName, setOrgName] = useState("");
+  const [login, setLogin] = useState("");
+
+  const orgSlugPreview = orgName ? slugify(orgName) : "";
+  const loginPreview = login.trim().toLowerCase() || "login";
 
   return (
     <Card>
@@ -35,11 +41,35 @@ export default function RegisterPage() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="orgName">Название организации</Label>
-            <Input id="orgName" name="orgName" required />
+            <Input
+              id="orgName"
+              name="orgName"
+              required
+              value={orgName}
+              onChange={(e) => setOrgName(e.target.value)}
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="name">Ваше имя</Label>
             <Input id="name" name="name" required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="login">Логин</Label>
+            <Input
+              id="login"
+              name="login"
+              placeholder="ivan"
+              autoCapitalize="off"
+              autoCorrect="off"
+              required
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+            />
+            {orgSlugPreview && (
+              <p className="text-xs text-muted-foreground">
+                Вход будет по логину: {loginPreview}@{orgSlugPreview}
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="email">Email</Label>
