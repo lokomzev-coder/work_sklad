@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { clientSchema } from "@/lib/validation/client";
 import { archiveOrDelete } from "@/lib/archive";
+import { saveCustomFieldValues } from "@/lib/custom-fields";
 
 export interface ActionResult {
   error?: string;
@@ -40,9 +41,10 @@ export async function createClient(
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
 
-  await prisma.client.create({
+  const client = await prisma.client.create({
     data: { ...parsed.data, orgId: ctx.orgId },
   });
+  await saveCustomFieldValues(ctx.orgId, "CLIENT", client.id, formData);
 
   revalidatePath(`/${orgSlug}/clients`);
   redirect(`/${orgSlug}/clients`);
@@ -66,6 +68,7 @@ export async function updateClient(
     where: { id: clientId, orgId: ctx.orgId },
     data: parsed.data,
   });
+  await saveCustomFieldValues(ctx.orgId, "CLIENT", clientId, formData);
 
   revalidatePath(`/${orgSlug}/clients`);
   redirect(`/${orgSlug}/clients`);

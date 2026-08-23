@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { paymentSchema } from "@/lib/validation/payment";
+import { dispatchWebhookEvent } from "@/lib/webhooks";
 
 export interface ActionResult {
   error?: string;
@@ -37,9 +38,10 @@ export async function createPayment(
     return { error: "Контрагент не найден" };
   }
 
-  await prisma.payment.create({
+  const payment = await prisma.payment.create({
     data: { ...parsed.data, orgId: ctx.orgId },
   });
+  dispatchWebhookEvent(ctx.orgId, "PAYMENT_CREATED", { paymentId: payment.id });
 
   revalidatePath(`/${orgSlug}/payments`);
   redirect(`/${orgSlug}/payments`);

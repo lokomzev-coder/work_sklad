@@ -4,6 +4,8 @@ import { getOrgContext } from "@/lib/tenant";
 import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-form";
 import { PurchaseOrderStatusSelect } from "@/components/purchase-orders/purchase-order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
+import { PrintButton } from "@/components/print/print-button";
+import { listDocumentStatuses } from "@/lib/document-statuses";
 
 export default async function EditPurchaseOrderPage({
   params,
@@ -32,6 +34,8 @@ export default async function EditPurchaseOrderPage({
     referencedEmployee,
     referencedCatalogItems,
     contracts,
+    legalEntities,
+    statusOptions,
   ] = await Promise.all([
     prisma.client.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
     prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
@@ -44,6 +48,8 @@ export default async function EditPurchaseOrderPage({
       : null,
     prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    listDocumentStatuses(ctx.orgId, "PURCHASE_ORDER"),
   ]);
 
   const suppliers = referencedSupplier
@@ -94,11 +100,15 @@ export default async function EditPurchaseOrderPage({
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказ поставщику №{purchaseOrder.number}</h1>
-        <PurchaseOrderStatusSelect
-          orgSlug={org}
-          purchaseOrderId={purchaseOrder.id}
-          status={purchaseOrder.status}
-        />
+        <div className="flex items-center gap-2">
+          <PrintButton href={`/print/purchase-orders/${org}/${purchaseOrder.id}`} />
+          <PurchaseOrderStatusSelect
+            orgSlug={org}
+            purchaseOrderId={purchaseOrder.id}
+            statusId={purchaseOrder.statusId}
+            statusOptions={statusOptions}
+          />
+        </div>
       </div>
       <PurchaseOrderForm
         orgSlug={org}
@@ -112,10 +122,12 @@ export default async function EditPurchaseOrderPage({
           currency: c.currency,
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
+        legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
         defaultValues={{
           supplierId: purchaseOrder.supplierId,
           assignedEmployeeId: purchaseOrder.assignedEmployeeId,
           contractId: purchaseOrder.contractId,
+          legalEntityId: purchaseOrder.legalEntityId,
           lineItems: purchaseOrder.lineItems.map((li) => ({
             catalogItemId: li.catalogItemId,
             quantity: li.quantity.toString(),

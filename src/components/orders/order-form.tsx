@@ -38,11 +38,13 @@ interface OrderFormProps {
   catalogOptions: CatalogOption[];
   contractOptions: ComboboxOption[];
   salesChannelOptions: ComboboxOption[];
+  legalEntityOptions: ComboboxOption[];
   defaultValues?: {
     clientId: string | null;
     assignedEmployeeId: string | null;
     contractId: string | null;
     salesChannelId: string | null;
+    legalEntityId: string | null;
     lineItems: { catalogItemId: string; variantId: string | null; quantity: string }[];
   };
 }
@@ -59,6 +61,7 @@ export function OrderForm({
   catalogOptions,
   contractOptions,
   salesChannelOptions,
+  legalEntityOptions,
   defaultValues,
 }: OrderFormProps) {
   const router = useRouter();
@@ -75,6 +78,9 @@ export function OrderForm({
   );
   const [salesChannelId, setSalesChannelId] = useState<string | null>(
     defaultValues?.salesChannelId ?? null,
+  );
+  const [legalEntityId, setLegalEntityId] = useState<string | null>(
+    defaultValues?.legalEntityId ?? null,
   );
   const [rows, setRows] = useState<LineItemRow[]>(() =>
     defaultValues?.lineItems.length
@@ -146,6 +152,7 @@ export function OrderForm({
         assignedEmployeeId,
         contractId,
         salesChannelId,
+        legalEntityId,
         lineItems,
       });
       if (result.error) {
@@ -201,6 +208,16 @@ export function OrderForm({
               onChange={setSalesChannelId}
               placeholder="Не указан"
               emptyMessage="Каналы не найдены"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Юрлицо</Label>
+            <EntityCombobox
+              options={legalEntityOptions}
+              value={legalEntityId}
+              onChange={setLegalEntityId}
+              placeholder="Не указано"
+              emptyMessage="Юрлица не найдены"
             />
           </div>
         </CardContent>

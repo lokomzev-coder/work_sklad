@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getLatestRates, getOrgBaseCurrency, toBase } from "@/lib/currency";
 
 export interface DateRange {
   from?: Date;
@@ -71,33 +72,44 @@ export interface MoneyRow {
 
 export interface MoneyReport {
   rows: MoneyRow[];
+  /** Converted to the org's base currency (lib/currency.ts) so mixed-currency
+   * payments still sum into one meaningful number. */
   periodIn: number;
   periodOut: number;
   /** All-time cash position, not scoped to the period — a balance, not a flow. */
   currentBalance: number;
+  baseCurrency: string;
 }
 
 export async function getMoneyReport(orgId: string, range: DateRange = {}): Promise<MoneyReport> {
   const createdAt = dateFilter(range);
 
-  const [periodPayments, allTimeAgg] = await Promise.all([
+  const [periodPayments, allTimePayments, baseCurrency, rates] = await Promise.all([
     prisma.payment.findMany({
       where: { orgId, ...(createdAt ? { createdAt } : {}) },
       include: { counterparty: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.payment.groupBy({ by: ["direction"], where: { orgId }, _sum: { amount: true } }),
+    prisma.payment.findMany({ where: { orgId }, select: { direction: true, amount: true, currency: true } }),
+    getOrgBaseCurrency(orgId),
+    getLatestRates(orgId),
   ]);
 
-  const inTotal = Number(allTimeAgg.find((r) => r.direction === "IN")?._sum.amount ?? 0);
-  const outTotal = Number(allTimeAgg.find((r) => r.direction === "OUT")?._sum.amount ?? 0);
+  const convert = (amount: number, currency: string) => toBase(rates, baseCurrency, amount, currency);
+
+  const inTotal = allTimePayments
+    .filter((p) => p.direction === "IN")
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+  const outTotal = allTimePayments
+    .filter((p) => p.direction === "OUT")
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
 
   const periodIn = periodPayments
     .filter((p) => p.direction === "IN")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
   const periodOut = periodPayments
     .filter((p) => p.direction === "OUT")
-    .reduce((sum, p) => sum + Number(p.amount), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
 
   return {
     rows: periodPayments.map((p) => ({
@@ -112,6 +124,7 @@ export async function getMoneyReport(orgId: string, range: DateRange = {}): Prom
     periodIn,
     periodOut,
     currentBalance: inTotal - outTotal,
+    baseCurrency,
   };
 }
 
@@ -119,6 +132,7 @@ export interface PnlReport {
   revenue: number;
   costOfGoods: number;
   grossMargin: number;
+  baseCurrency: string;
 }
 
 /**
@@ -127,32 +141,37 @@ export interface PnlReport {
  * actually received (SUPPLY lines, at the PO's snapshotted cost) in the same
  * period. This is NOT proper COGS matching (no FIFO/weighted-average
  * costing tying a specific sold unit to the batch it was purchased in) —
- * it's a rough period P&L, good enough for a MVP "Деньги/P&L" view.
+ * it's a rough period P&L, good enough for a MVP "Деньги/P&L" view. Amounts
+ * are converted to the org's base currency (lib/currency.ts) before summing.
  */
 export async function getPnlReport(orgId: string, range: DateRange = {}): Promise<PnlReport> {
   const createdAt = dateFilter(range);
 
-  const [demandLines, supplyLines] = await Promise.all([
+  const [demandLines, supplyLines, baseCurrency, rates] = await Promise.all([
     prisma.stockMovementLine.findMany({
       where: { movement: { orgId, type: "DEMAND", ...(createdAt ? { createdAt } : {}) } },
-      select: { quantity: true, unitPriceSnapshot: true },
+      select: { quantity: true, unitPriceSnapshot: true, currency: true },
     }),
     prisma.stockMovementLine.findMany({
       where: { movement: { orgId, type: "SUPPLY", ...(createdAt ? { createdAt } : {}) } },
-      select: { quantity: true, unitPriceSnapshot: true },
+      select: { quantity: true, unitPriceSnapshot: true, currency: true },
     }),
+    getOrgBaseCurrency(orgId),
+    getLatestRates(orgId),
   ]);
 
   const revenue = demandLines.reduce(
-    (sum, l) => sum + Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0),
+    (sum, l) =>
+      sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
     0,
   );
   const costOfGoods = supplyLines.reduce(
-    (sum, l) => sum + Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0),
+    (sum, l) =>
+      sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
     0,
   );
 
-  return { revenue, costOfGoods, grossMargin: revenue - costOfGoods };
+  return { revenue, costOfGoods, grossMargin: revenue - costOfGoods, baseCurrency };
 }
 
 export interface ClientSalesRow {
@@ -164,23 +183,34 @@ export interface ClientSalesRow {
 }
 
 export async function getSalesByClientReport(orgId: string): Promise<ClientSalesRow[]> {
-  const clients = await prisma.client.findMany({
-    where: { orgId, orders: { some: {} } },
-    include: { orders: { include: { lineItems: true } } },
-    orderBy: { name: "asc" },
-  });
+  const [clients, paymentsIn, baseCurrency, rates] = await Promise.all([
+    prisma.client.findMany({
+      where: { orgId, orders: { some: {} } },
+      include: { orders: { include: { lineItems: true } } },
+      orderBy: { name: "asc" },
+    }),
+    prisma.payment.findMany({
+      where: { orgId, direction: "IN" },
+      select: { counterpartyId: true, amount: true, currency: true },
+    }),
+    getOrgBaseCurrency(orgId),
+    getLatestRates(orgId),
+  ]);
 
-  const paymentsIn = await prisma.payment.groupBy({
-    by: ["counterpartyId"],
-    where: { orgId, direction: "IN" },
-    _sum: { amount: true },
-  });
-  const paymentsByClient = new Map(paymentsIn.map((p) => [p.counterpartyId, Number(p._sum.amount ?? 0)]));
+  const paymentsByClient = new Map<string, number>();
+  for (const p of paymentsIn) {
+    const converted = toBase(rates, baseCurrency, Number(p.amount), p.currency);
+    paymentsByClient.set(p.counterpartyId, (paymentsByClient.get(p.counterpartyId) ?? 0) + converted);
+  }
 
   return clients.map((c) => {
     const orderTotal = c.orders.reduce(
       (sum, o) =>
-        sum + o.lineItems.reduce((s, li) => s + Number(li.unitPriceSnapshot) * Number(li.quantity), 0),
+        sum +
+        o.lineItems.reduce(
+          (s, li) => s + toBase(rates, baseCurrency, Number(li.unitPriceSnapshot) * Number(li.quantity), li.currency),
+          0,
+        ),
       0,
     );
     const paymentsReceived = paymentsByClient.get(c.id) ?? 0;

@@ -30,10 +30,12 @@ interface PurchaseOrderFormProps {
   employeeOptions: ComboboxOption[];
   catalogOptions: CatalogOption[];
   contractOptions: ComboboxOption[];
+  legalEntityOptions: ComboboxOption[];
   defaultValues?: {
     supplierId: string | null;
     assignedEmployeeId: string | null;
     contractId: string | null;
+    legalEntityId: string | null;
     lineItems: { catalogItemId: string; quantity: string; unitCost: string }[];
   };
 }
@@ -49,6 +51,7 @@ export function PurchaseOrderForm({
   employeeOptions,
   catalogOptions,
   contractOptions,
+  legalEntityOptions,
   defaultValues,
 }: PurchaseOrderFormProps) {
   const router = useRouter();
@@ -59,6 +62,9 @@ export function PurchaseOrderForm({
     defaultValues?.assignedEmployeeId ?? null,
   );
   const [contractId, setContractId] = useState<string | null>(defaultValues?.contractId ?? null);
+  const [legalEntityId, setLegalEntityId] = useState<string | null>(
+    defaultValues?.legalEntityId ?? null,
+  );
   const [rows, setRows] = useState<LineItemRow[]>(() =>
     defaultValues?.lineItems.length
       ? defaultValues.lineItems.map((li) => ({
@@ -116,6 +122,7 @@ export function PurchaseOrderForm({
         supplierId,
         assignedEmployeeId,
         contractId,
+        legalEntityId,
         lineItems,
       });
       if (result.error) {
@@ -161,6 +168,16 @@ export function PurchaseOrderForm({
               onChange={setContractId}
               placeholder="Без договора"
               emptyMessage="Договоры не найдены"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Юрлицо</Label>
+            <EntityCombobox
+              options={legalEntityOptions}
+              value={legalEntityId}
+              onChange={setLegalEntityId}
+              placeholder="Не указано"
+              emptyMessage="Юрлица не найдены"
             />
           </div>
         </CardContent>

@@ -5,7 +5,8 @@ export type ArchivableEntityType =
   | "client"
   | "catalogItem"
   | "vaultServiceEntry"
-  | "store";
+  | "store"
+  | "legalEntity";
 
 const ENTITY_LABEL: Record<ArchivableEntityType, string> = {
   employee: "Сотрудник",
@@ -13,6 +14,7 @@ const ENTITY_LABEL: Record<ArchivableEntityType, string> = {
   catalogItem: "Позиция каталога",
   vaultServiceEntry: "Запись сервиса",
   store: "Склад",
+  legalEntity: "Юрлицо",
 };
 
 interface ReferenceCheck {
@@ -111,6 +113,19 @@ async function checkReferences(
         ? { referenced: true, reason: `по складу проведено ${count} движени(й)` }
         : { referenced: false };
     }
+    case "legalEntity": {
+      const [orderCount, poCount] = await Promise.all([
+        prisma.order.count({ where: { legalEntityId: id } }),
+        prisma.purchaseOrder.count({ where: { legalEntityId: id } }),
+      ]);
+      if (orderCount > 0) {
+        return { referenced: true, reason: `указано в ${orderCount} заказ(ах)` };
+      }
+      if (poCount > 0) {
+        return { referenced: true, reason: `указано в ${poCount} заказ(ах) поставщику` };
+      }
+      return { referenced: false };
+    }
   }
 }
 
@@ -141,9 +156,18 @@ export async function archiveOrDelete(
         await prisma.employee.delete({ where: { id, orgId } });
         break;
       case "client":
+        // No FK from CustomFieldValue to Client (polymorphic EAV, see
+        // schema.prisma) — clean up its custom field values by hand so a
+        // hard delete doesn't leave them orphaned.
+        await prisma.customFieldValue.deleteMany({
+          where: { entityId: id, definition: { entityType: "CLIENT" } },
+        });
         await prisma.client.delete({ where: { id, orgId } });
         break;
       case "catalogItem":
+        await prisma.customFieldValue.deleteMany({
+          where: { entityId: id, definition: { entityType: "CATALOG_ITEM" } },
+        });
         await prisma.catalogItem.delete({ where: { id, orgId } });
         break;
       case "vaultServiceEntry":
@@ -151,6 +175,9 @@ export async function archiveOrDelete(
         break;
       case "store":
         await prisma.store.delete({ where: { id, orgId } });
+        break;
+      case "legalEntity":
+        await prisma.legalEntity.delete({ where: { id, orgId } });
         break;
     }
     return { deleted: true };
@@ -183,6 +210,12 @@ export async function archiveOrDelete(
       break;
     case "store":
       await prisma.store.update({
+        where: { id, orgId },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      break;
+    case "legalEntity":
+      await prisma.legalEntity.update({
         where: { id, orgId },
         data: { status: "ARCHIVED", archivedAt: new Date() },
       });

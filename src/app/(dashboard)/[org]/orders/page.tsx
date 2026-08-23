@@ -14,13 +14,6 @@ import {
 } from "@/components/ui/table";
 import { OrdersSubnav } from "@/components/orders/orders-subnav";
 
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: "Черновик",
-  CONFIRMED: "Подтверждён",
-  COMPLETED: "Завершён",
-  CANCELLED: "Отменён",
-};
-
 export default async function OrdersPage({
   params,
 }: {
@@ -30,9 +23,14 @@ export default async function OrdersPage({
   const ctx = await getOrgContext(org);
 
   const orders = await prisma.order.findMany({
-    where: { orgId: ctx.orgId },
+    where: {
+      orgId: ctx.orgId,
+      // Block I: an OWN-scoped custom role only sees orders assigned to
+      // their own Employee record.
+      ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
+    },
     orderBy: { number: "desc" },
-    include: { client: true, lineItems: true },
+    include: { client: true, lineItems: true, status: true },
   });
 
   const canEdit = can(ctx.role, "orders", "edit");
@@ -81,7 +79,7 @@ export default async function OrdersPage({
                     </TableCell>
                     <TableCell>{order.client?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{STATUS_LABEL[order.status]}</Badge>
+                      <Badge variant="secondary">{order.status.name}</Badge>
                     </TableCell>
                     <TableCell className="text-right">{total.toFixed(2)} ₽</TableCell>
                   </TableRow>

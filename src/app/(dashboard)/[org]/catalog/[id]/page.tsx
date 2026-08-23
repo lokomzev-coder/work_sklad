@@ -7,6 +7,7 @@ import { CatalogItemForm } from "@/components/catalog/catalog-item-form";
 import { BundleComponentsEditor } from "@/components/catalog/bundle-components-editor";
 import { VariantsEditor } from "@/components/catalog/variants-editor";
 import { variantLabel } from "@/lib/catalog-variants";
+import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function EditCatalogItemPage({
   params,
@@ -24,9 +25,11 @@ export default async function EditCatalogItemPage({
     notFound();
   }
 
-  const [units, groups] = await Promise.all([
+  const [units, groups, customFieldDefs, customFieldValues] = await Promise.all([
     prisma.unit.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
     prisma.catalogGroup.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    listCustomFieldDefinitions(ctx.orgId, "CATALOG_ITEM"),
+    getCustomFieldValues(item.id),
   ]);
 
   const boundAction = updateCatalogItem.bind(null, org, item.id);
@@ -100,6 +103,8 @@ export default async function EditCatalogItemPage({
           groupId: item.groupId,
         }}
         submitLabel="Сохранить"
+        customFieldDefs={customFieldDefs}
+        customFieldValues={customFieldValues}
       />
       {item.type === "BUNDLE" && (
         <BundleComponentsEditor

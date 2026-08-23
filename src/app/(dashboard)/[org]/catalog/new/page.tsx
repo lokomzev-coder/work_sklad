@@ -3,6 +3,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { flattenGroupTree } from "@/lib/catalog-groups";
 import { createCatalogItem } from "@/actions/catalog";
 import { CatalogItemForm } from "@/components/catalog/catalog-item-form";
+import { listCustomFieldDefinitions } from "@/lib/custom-fields";
 
 export default async function NewCatalogItemPage({
   params,
@@ -13,9 +14,10 @@ export default async function NewCatalogItemPage({
   const ctx = await getOrgContext(org);
   const boundAction = createCatalogItem.bind(null, org);
 
-  const [units, groups] = await Promise.all([
+  const [units, groups, customFieldDefs] = await Promise.all([
     prisma.unit.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
     prisma.catalogGroup.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    listCustomFieldDefinitions(ctx.orgId, "CATALOG_ITEM"),
   ]);
 
   return (
@@ -30,6 +32,7 @@ export default async function NewCatalogItemPage({
           label: path,
         }))}
         submitLabel="Создать"
+        customFieldDefs={customFieldDefs}
       />
     </div>
   );

@@ -4,7 +4,9 @@ import { getOrgContext } from "@/lib/tenant";
 import { OrderForm } from "@/components/orders/order-form";
 import { OrderStatusSelect } from "@/components/orders/order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
+import { PrintButton } from "@/components/print/print-button";
 import { variantLabel } from "@/lib/catalog-variants";
+import { listDocumentStatuses } from "@/lib/document-statuses";
 
 export default async function EditOrderPage({
   params,
@@ -20,6 +22,9 @@ export default async function EditOrderPage({
   });
 
   if (!order) {
+    notFound();
+  }
+  if (ctx.orderScope === "OWN" && order.assignedEmployeeId !== ctx.employeeId) {
     notFound();
   }
 
@@ -41,6 +46,8 @@ export default async function EditOrderPage({
     referencedCatalogItems,
     contracts,
     salesChannels,
+    legalEntities,
+    statusOptions,
   ] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
@@ -67,6 +74,8 @@ export default async function EditOrderPage({
     }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    listDocumentStatuses(ctx.orgId, "ORDER"),
   ]);
 
   // Archived entities stay out of the "pick something new" list, but an
@@ -119,7 +128,15 @@ export default async function EditOrderPage({
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказ №{order.number}</h1>
-        <OrderStatusSelect orgSlug={org} orderId={order.id} status={order.status} />
+        <div className="flex items-center gap-2">
+          <PrintButton href={`/print/orders/${org}/${order.id}`} />
+          <OrderStatusSelect
+            orgSlug={org}
+            orderId={order.id}
+            statusId={order.statusId}
+            statusOptions={statusOptions}
+          />
+        </div>
       </div>
       <OrderForm
         orgSlug={org}
@@ -142,11 +159,13 @@ export default async function EditOrderPage({
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
+        legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
         defaultValues={{
           clientId: order.clientId,
           assignedEmployeeId: order.assignedEmployeeId,
           contractId: order.contractId,
           salesChannelId: order.salesChannelId,
+          legalEntityId: order.legalEntityId,
           lineItems: order.lineItems.map((li) => ({
             catalogItemId: li.catalogItemId,
             variantId: li.variantId,

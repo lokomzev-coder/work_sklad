@@ -10,25 +10,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { updateOrderStatus } from "@/actions/orders";
-import type { OrderStatus } from "@/generated/prisma/enums";
-
-const STATUS_ITEMS: Record<OrderStatus, string> = {
-  DRAFT: "Черновик",
-  CONFIRMED: "Подтверждён",
-  COMPLETED: "Завершён",
-  CANCELLED: "Отменён",
-};
 
 interface OrderStatusSelectProps {
   orgSlug: string;
   orderId: string;
-  status: OrderStatus;
+  statusId: string;
+  statusOptions: { id: string; name: string }[];
 }
 
-export function OrderStatusSelect({ orgSlug, orderId, status }: OrderStatusSelectProps) {
+export function OrderStatusSelect({
+  orgSlug,
+  orderId,
+  statusId,
+  statusOptions,
+}: OrderStatusSelectProps) {
   const [isPending, startTransition] = useTransition();
+  const items = Object.fromEntries(statusOptions.map((s) => [s.id, s.name]));
 
-  function handleChange(value: OrderStatus | null) {
+  function handleChange(value: string | null) {
     if (!value) return;
     startTransition(async () => {
       await updateOrderStatus(orgSlug, orderId, value);
@@ -37,14 +36,14 @@ export function OrderStatusSelect({ orgSlug, orderId, status }: OrderStatusSelec
   }
 
   return (
-    <Select value={status} items={STATUS_ITEMS} onValueChange={handleChange} disabled={isPending}>
+    <Select value={statusId} items={items} onValueChange={handleChange} disabled={isPending}>
       <SelectTrigger className="w-40">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {Object.entries(STATUS_ITEMS).map(([value, label]) => (
-          <SelectItem key={value} value={value}>
-            {label}
+        {statusOptions.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
           </SelectItem>
         ))}
       </SelectContent>

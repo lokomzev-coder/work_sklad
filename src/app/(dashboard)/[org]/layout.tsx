@@ -18,6 +18,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/contracts", label: "Договоры" },
   { href: "/reports", label: "Отчёты" },
   { href: "/vault", label: "Пароли" },
+  { href: "/settings/legal-entities", label: "Настройки" },
 ];
 
 export default async function OrgLayout({
@@ -33,7 +34,9 @@ export default async function OrgLayout({
   const memberships = session?.memberships ?? [];
 
   const navItems = NAV_ITEMS.filter(
-    (item) => item.href !== "/vault" || ctx.role !== "EMPLOYEE",
+    (item) =>
+      (item.href !== "/vault" && item.href !== "/settings/legal-entities") ||
+      ctx.role !== "EMPLOYEE",
   );
 
   return (

@@ -39,19 +39,19 @@ export default async function MoneyReportPage({
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Поступления за период</div>
-            <div className="text-xl font-semibold">{report.periodIn.toFixed(2)} ₽</div>
+            <div className="text-xl font-semibold">{report.periodIn.toFixed(2)} {report.baseCurrency}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Выплаты за период</div>
-            <div className="text-xl font-semibold">{report.periodOut.toFixed(2)} ₽</div>
+            <div className="text-xl font-semibold">{report.periodOut.toFixed(2)} {report.baseCurrency}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Текущий денежный остаток</div>
-            <div className="text-xl font-semibold">{report.currentBalance.toFixed(2)} ₽</div>
+            <div className="text-xl font-semibold">{report.currentBalance.toFixed(2)} {report.baseCurrency}</div>
           </CardContent>
         </Card>
       </div>

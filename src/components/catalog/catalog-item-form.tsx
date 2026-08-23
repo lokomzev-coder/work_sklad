@@ -5,7 +5,7 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -17,7 +17,9 @@ import {
   EntityCombobox,
   type ComboboxOption,
 } from "@/components/forms/entity-combobox";
+import { CustomFieldsSection } from "@/components/settings/custom-fields-section";
 import type { ActionResult } from "@/actions/catalog";
+import type { CustomFieldDef } from "@/lib/custom-fields";
 
 const initialState: ActionResult = {};
 const NONE_VALUE = "__none__";
@@ -31,6 +33,8 @@ interface CatalogItemFormProps {
   action: (prevState: ActionResult, formData: FormData) => Promise<ActionResult>;
   unitOptions: ComboboxOption[];
   groupOptions: ComboboxOption[];
+  customFieldDefs?: CustomFieldDef[];
+  customFieldValues?: Record<string, string>;
   defaultValues?: {
     name: string;
     type: "PRODUCT" | "SERVICE" | "BUNDLE";
@@ -51,6 +55,8 @@ export function CatalogItemForm({
   groupOptions,
   defaultValues,
   submitLabel,
+  customFieldDefs = [],
+  customFieldValues = {},
 }: CatalogItemFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
   const [groupId, setGroupId] = useState<string | null>(
@@ -162,22 +168,28 @@ export function CatalogItemForm({
               emptyMessage="Группы не найдены"
             />
           </div>
-          {state.error && (
-            <p className="text-sm text-destructive">{state.error}</p>
-          )}
         </CardContent>
-        <CardFooter className="flex gap-2">
-          <Button type="submit" disabled={pending}>
-            {pending ? "Сохранение..." : submitLabel}
-          </Button>
-          <Button
-            variant="outline"
-            render={<Link href={`/${orgSlug}/catalog`} />}
-          >
-            Отмена
-          </Button>
-        </CardFooter>
       </Card>
+
+      <div className="mt-4">
+        <CustomFieldsSection defs={customFieldDefs} values={customFieldValues} />
+      </div>
+
+      {state.error && (
+        <p className="mt-4 text-sm text-destructive">{state.error}</p>
+      )}
+
+      <div className="mt-4 flex gap-2">
+        <Button type="submit" disabled={pending}>
+          {pending ? "Сохранение..." : submitLabel}
+        </Button>
+        <Button
+          variant="outline"
+          render={<Link href={`/${orgSlug}/catalog`} />}
+        >
+          Отмена
+        </Button>
+      </div>
     </form>
   );
 }

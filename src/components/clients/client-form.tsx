@@ -6,13 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { CustomFieldsSection } from "@/components/settings/custom-fields-section";
 import type { ActionResult } from "@/actions/clients";
+import type { CustomFieldDef } from "@/lib/custom-fields";
 
 const initialState: ActionResult = {};
 
 interface ClientFormProps {
   orgSlug: string;
   action: (prevState: ActionResult, formData: FormData) => Promise<ActionResult>;
+  customFieldDefs?: CustomFieldDef[];
+  customFieldValues?: Record<string, string>;
   defaultValues?: {
     name: string;
     inn: string | null;
@@ -33,6 +37,8 @@ export function ClientForm({
   action,
   defaultValues,
   submitLabel,
+  customFieldDefs = [],
+  customFieldValues = {},
 }: ClientFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
 
@@ -112,6 +118,8 @@ export function ClientForm({
           </div>
         </CardContent>
       </Card>
+
+      <CustomFieldsSection defs={customFieldDefs} values={customFieldValues} />
 
       {state.error && <p className="text-sm text-destructive">{state.error}</p>}
 

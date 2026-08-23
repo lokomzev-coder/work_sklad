@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getOrgContext } from "@/lib/tenant";
 import { getSalesByClientReport } from "@/lib/reports";
+import { getOrgBaseCurrency } from "@/lib/currency";
 import {
   Table,
   TableHeader,
@@ -19,7 +20,10 @@ export default async function SalesByClientReportPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const rows = await getSalesByClientReport(ctx.orgId);
+  const [rows, baseCurrency] = await Promise.all([
+    getSalesByClientReport(ctx.orgId),
+    getOrgBaseCurrency(ctx.orgId),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -51,11 +55,11 @@ export default async function SalesByClientReportPage({
                       {r.clientName}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right">{r.orderTotal.toFixed(2)} ₽</TableCell>
-                  <TableCell className="text-right">{r.paymentsReceived.toFixed(2)} ₽</TableCell>
+                  <TableCell className="text-right">{r.orderTotal.toFixed(2)} {baseCurrency}</TableCell>
+                  <TableCell className="text-right">{r.paymentsReceived.toFixed(2)} {baseCurrency}</TableCell>
                   <TableCell className="text-right">
                     <span className={r.receivable > 0 ? "text-destructive" : ""}>
-                      {r.receivable.toFixed(2)} ₽
+                      {r.receivable.toFixed(2)} {baseCurrency}
                     </span>
                   </TableCell>
                 </TableRow>

@@ -40,22 +40,32 @@ model Organization {
   encDekWrapped Bytes?
   encDekNonce   Bytes?
 
-  memberships     Membership[]
-  employees       Employee[]
-  clients         Client[]
-  catalogItems    CatalogItem[]
-  catalogGroups   CatalogGroup[]
-  units           Unit[]
-  characteristics Characteristic[]
-  orders          Order[]
-  purchaseOrders  PurchaseOrder[]
-  payments        Payment[]
-  vaultEntries    VaultServiceEntry[]
-  tags            Tag[]
-  stores          Store[]
-  stockMovements  StockMovement[]
-  salesChannels   SalesChannel[]
-  contracts       Contract[]
+  // Currency all money reports/balances convert into (Block H2). Amounts in
+  // any other currency are converted via the latest applicable ExchangeRate.
+  baseCurrency String @default("RUB")
+
+  memberships            Membership[]
+  employees              Employee[]
+  clients                Client[]
+  catalogItems           CatalogItem[]
+  catalogGroups          CatalogGroup[]
+  units                  Unit[]
+  characteristics        Characteristic[]
+  orders                 Order[]
+  purchaseOrders         PurchaseOrder[]
+  payments               Payment[]
+  vaultEntries           VaultServiceEntry[]
+  tags                   Tag[]
+  stores                 Store[]
+  stockMovements         StockMovement[]
+  salesChannels          SalesChannel[]
+  contracts              Contract[]
+  legalEntities          LegalEntity[]
+  documentStatuses       DocumentStatus[]
+  customFieldDefinitions CustomFieldDefinition[]
+  exchangeRates          ExchangeRate[]
+  webhooks               Webhook[]
+  customRoles            CustomRole[]
 }
 
 model Membership {
@@ -71,12 +81,24 @@ model Membership {
   // resolves *which* Membership/User to check it against is per-org.
   login  String
 
+  // Links this login to an Employee record, so "who am I" for OWN-scope
+  // permissions (Block I) resolves to a concrete assignedEmployeeId, and so
+  // an Employee can be given self-service dashboard access. Optional — most
+  // orgs will have Employee rows that never get a login at all.
+  employeeId String?     @unique
+  employee   Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  // Overrides the base enum `role` with a per-org custom permission matrix
+  // (Block I) when set; falls back to the enum-based matrix when null.
+  customRoleId String?
+  customRole   CustomRole? @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+
   user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
   @@unique([userId, orgId])
   @@unique([orgId, login])
   @@index([orgId])
+  @@index([customRoleId])
 }
 
 // Shared status for archivable entities (Employee, Client, CatalogItem, VaultServiceEntry).
@@ -100,6 +122,9 @@ model Employee {
   ordersAssigned         Order[]               @relation("AssignedEmployee")
   purchaseOrdersAssigned PurchaseOrder[]       @relation("AssignedEmployeePO")
   vaultAccess            EmployeeVaultAccess[]
+  // Opposite side of Membership.employeeId — set only if this employee has
+  // been granted a personal login (Block I self-service).
+  membership             Membership?
 
   @@index([orgId, status])
 }
@@ -402,16 +427,75 @@ model StockMovementLine {
   // time — same reasoning as OrderLineItem.unitPriceSnapshot: later catalog
   // price edits must not retroactively change historical documents.
   unitPriceSnapshot Decimal?      @db.Decimal(12, 2)
+  // Currency of unitPriceSnapshot (Block H2), carried over from the
+  // order/PO line being fulfilled. Null wherever unitPriceSnapshot is null
+  // (ENTER/LOSS/MOVE/INVENTORY have no price at all).
+  currency          String?
 
   @@index([movementId])
   @@index([catalogItemId])
 }
 
-enum OrderStatus {
-  DRAFT
-  CONFIRMED
-  COMPLETED
-  CANCELLED
+// Company's own legal entity issuing a document (D1) — distinct from the
+// tenant Organization (which is the SaaS account) and from Client (the
+// counterparty). Most orgs need exactly one; the model still allows several
+// for the rare company with more than one legal entity, without forcing
+// everyone through that complexity (`isDefault` picks who's pre-selected on
+// new documents).
+model LegalEntity {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  inn         String?
+  kpp         String?
+  ogrn        String?
+  address     String?
+  bankName    String?
+  bankBik     String?
+  bankAccount String?
+  isDefault   Boolean      @default(false)
+  status      EntityStatus @default(ACTIVE)
+  archivedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  orders         Order[]
+  purchaseOrders PurchaseOrder[]
+
+  @@index([orgId, status])
+}
+
+// C4: per-org configurable statuses, replacing the old hardcoded
+// OrderStatus/PurchaseOrderStatus enums. Deliberately NOT a full workflow
+// engine (no transition graph, no per-transition permissions) — just a
+// named, ordered, colored list per document kind, which is what actually
+// varies between businesses ("Ожидает оплаты", "В сборке", ...). Every org
+// gets 4 seeded defaults (lib/document-statuses.ts::ensureDefaultStatuses,
+// same lazy-backfill pattern as the vault DEK) mirroring the old enum, so
+// existing behavior is preserved unless the org customizes it.
+enum DocumentStatusKind {
+  ORDER
+  PURCHASE_ORDER
+}
+
+model DocumentStatus {
+  id        String             @id @default(cuid())
+  orgId     String
+  org       Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  kind      DocumentStatusKind
+  name      String
+  color     String             @default("gray")
+  position  Int
+  // A document in a final status is done (won't naturally progress further)
+  // — used only for display emphasis, not enforced.
+  isFinal   Boolean            @default(false)
+  createdAt DateTime           @default(now())
+
+  orders         Order[]
+  purchaseOrders PurchaseOrder[]
+
+  @@unique([orgId, kind, name])
+  @@index([orgId, kind, position])
 }
 
 model Order {
@@ -427,7 +511,10 @@ model Order {
   contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
   salesChannelId     String?
   salesChannel       SalesChannel? @relation(fields: [salesChannelId], references: [id], onDelete: SetNull)
-  status             OrderStatus  @default(DRAFT)
+  legalEntityId      String?
+  legalEntity        LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId           String
+  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
   createdAt          DateTime     @default(now())
 
   lineItems OrderLineItem[]
@@ -435,7 +522,7 @@ model Order {
   payments  Payment[]
 
   @@unique([orgId, number])
-  @@index([orgId, status])
+  @@index([orgId, statusId])
 }
 
 model OrderLineItem {
@@ -448,15 +535,11 @@ model OrderLineItem {
   variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
   quantity          Decimal             @db.Decimal(12, 3)
   unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  // Snapshotted alongside the price (Block H2) — a later change to the
+  // catalog item's currency must not retroactively change this line.
+  currency          String              @default("RUB")
 
   @@index([orderId])
-}
-
-enum PurchaseOrderStatus {
-  DRAFT
-  CONFIRMED
-  COMPLETED
-  CANCELLED
 }
 
 model PurchaseOrder {
@@ -470,7 +553,10 @@ model PurchaseOrder {
   assignedEmployee   Employee?           @relation("AssignedEmployeePO", fields: [assignedEmployeeId], references: [id])
   contractId         String?
   contract           Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
-  status             PurchaseOrderStatus @default(DRAFT)
+  legalEntityId      String?
+  legalEntity        LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId           String
+  status             DocumentStatus      @relation(fields: [statusId], references: [id], onDelete: Restrict)
   createdAt          DateTime            @default(now())
 
   lineItems PurchaseOrderLineItem[]
@@ -478,7 +564,7 @@ model PurchaseOrder {
   payments  Payment[]
 
   @@unique([orgId, number])
-  @@index([orgId, status])
+  @@index([orgId, statusId])
 }
 
 model PurchaseOrderLineItem {
@@ -489,6 +575,7 @@ model PurchaseOrderLineItem {
   catalogItem       CatalogItem   @relation(fields: [catalogItemId], references: [id])
   quantity          Decimal       @db.Decimal(12, 3)
   unitPriceSnapshot Decimal       @db.Decimal(12, 2)
+  currency          String        @default("RUB")
 
   @@index([purchaseOrderId])
 }
@@ -601,4 +688,145 @@ model VaultAccessLog {
   createdAt    DateTime          @default(now())
 
   @@index([vaultEntryId])
+}
+
+// --- Block H3: custom fields --------------------------------------------
+// Generic EAV pattern scoped to the entities that actually benefit from
+// ad-hoc fields (dictionaries/documents users edit by hand). No FK from
+// CustomFieldValue.entityId to the target row — Prisma can't express a
+// polymorphic relation — so a hard-deleted Client/CatalogItem can leave
+// orphaned values behind; archiveOrDelete's hard-delete branches clean these
+// up explicitly (see lib/archive.ts) to keep that window small. Order/
+// PurchaseOrder are never hard-deleted at all, so no cleanup needed there.
+
+enum CustomFieldEntityType {
+  CLIENT
+  CATALOG_ITEM
+  ORDER
+  PURCHASE_ORDER
+}
+
+enum CustomFieldType {
+  TEXT
+  NUMBER
+  DATE
+  BOOLEAN
+  SELECT
+}
+
+model CustomFieldDefinition {
+  id         String                @id @default(cuid())
+  orgId      String
+  org        Organization          @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  entityType CustomFieldEntityType
+  name       String
+  type       CustomFieldType
+  // Selectable values when type = SELECT; unused otherwise.
+  options    String[]              @default([])
+  position   Int                   @default(0)
+  createdAt  DateTime              @default(now())
+
+  values CustomFieldValue[]
+
+  @@unique([orgId, entityType, name])
+  @@index([orgId, entityType])
+}
+
+model CustomFieldValue {
+  id           String                @id @default(cuid())
+  definitionId String
+  definition   CustomFieldDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+  entityId     String
+  // Everything stored as text regardless of `type` (NUMBER/DATE/BOOLEAN are
+  // parsed back on read) — avoids a wide sparse-column table for 4 rarely-
+  // mixed value shapes.
+  value        String?
+
+  @@unique([definitionId, entityId])
+  @@index([entityId])
+}
+
+// --- Block H2: multi-currency --------------------------------------------
+// One rate per (org, currency, effective date) — "how many units of
+// Organization.baseCurrency for 1 unit of `currency`". Converting an amount
+// looks up the latest rate with effectiveAt <= the amount's own date (falls
+// back to the latest rate overall if the amount predates every recorded
+// rate). No historical FX table/provider integration — rates are entered by
+// hand, same spirit as everything else in this MVP.
+model ExchangeRate {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  currency    String
+  rateToBase  Decimal      @db.Decimal(14, 6)
+  effectiveAt DateTime     @default(now())
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId, currency, effectiveAt])
+}
+
+// --- Block H4: webhooks ---------------------------------------------------
+// Best-effort outbound notifications for external integrations (1С, sites,
+// marketplaces) — fire-and-forget HTTP POST with an HMAC-SHA256 signature
+// over the raw body (header X-EasyWork-Signature), no retry queue (no
+// background-job infra exists yet in this project) — a failed delivery is
+// just logged to WebhookDelivery for the user to notice and re-trigger
+// manually if needed.
+enum WebhookEvent {
+  ORDER_CREATED
+  ORDER_STATUS_CHANGED
+  PURCHASE_ORDER_CREATED
+  PURCHASE_ORDER_STATUS_CHANGED
+  PAYMENT_CREATED
+}
+
+model Webhook {
+  id        String         @id @default(cuid())
+  orgId     String
+  org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  url       String
+  secret    String
+  events    WebhookEvent[]
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([orgId])
+}
+
+model WebhookDelivery {
+  id         String       @id @default(cuid())
+  webhookId  String
+  webhook    Webhook      @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event      WebhookEvent
+  statusCode Int?
+  success    Boolean
+  error      String?
+  createdAt  DateTime     @default(now())
+
+  @@index([webhookId, createdAt])
+}
+
+// --- Block I: flexible permissions ----------------------------------------
+// A per-org reusable role (МойСклад's customrole) whose `permissions` JSON
+// fully REPLACES the enum-based matrix in lib/permissions.ts for any
+// Membership it's assigned to (not merged with the base Role) — see
+// notes/ROADMAP.md Block I. Scoped down from the researched МойСклад model:
+// only `ALL | OWN` (no OWN_GROUP — no department/group entity exists yet)
+// and only meaningful for the "orders" resource (assignedEmployeeId is the
+// only resource with a natural per-employee owner right now).
+model CustomRole {
+  id          String   @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  // Record<Resource, { access: Access; scope?: "ALL" | "OWN" }> — see
+  // lib/permissions.ts for the shape this is parsed into.
+  permissions Json
+  createdAt   DateTime @default(now())
+
+  memberships Membership[]
+
+  @@unique([orgId, name])
 }

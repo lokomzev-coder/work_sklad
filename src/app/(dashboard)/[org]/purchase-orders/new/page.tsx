@@ -10,7 +10,7 @@ export default async function NewPurchaseOrderPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [suppliers, employees, catalogItems, contracts] = await Promise.all([
+  const [suppliers, employees, catalogItems, contracts, legalEntities] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
@@ -24,6 +24,7 @@ export default async function NewPurchaseOrderPage({
       orderBy: { name: "asc" },
     }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -41,6 +42,7 @@ export default async function NewPurchaseOrderPage({
           currency: c.currency,
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
+        legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
       />
     </div>
   );

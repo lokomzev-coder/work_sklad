@@ -13,13 +13,6 @@ import {
   TableCell,
 } from "@/components/ui/table";
 
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: "Черновик",
-  CONFIRMED: "Подтверждён",
-  COMPLETED: "Завершён",
-  CANCELLED: "Отменён",
-};
-
 export default async function PurchaseOrdersPage({
   params,
 }: {
@@ -31,7 +24,7 @@ export default async function PurchaseOrdersPage({
   const purchaseOrders = await prisma.purchaseOrder.findMany({
     where: { orgId: ctx.orgId },
     orderBy: { number: "desc" },
-    include: { supplier: true, lineItems: true },
+    include: { supplier: true, lineItems: true, status: true },
   });
 
   const canEdit = can(ctx.role, "orders", "edit");
@@ -79,7 +72,7 @@ export default async function PurchaseOrdersPage({
                     </TableCell>
                     <TableCell>{po.supplier?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{STATUS_LABEL[po.status]}</Badge>
+                      <Badge variant="secondary">{po.status.name}</Badge>
                     </TableCell>
                     <TableCell className="text-right">{total.toFixed(2)} ₽</TableCell>
                   </TableRow>

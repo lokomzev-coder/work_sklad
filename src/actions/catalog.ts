@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { catalogItemSchema } from "@/lib/validation/catalog";
 import { archiveOrDelete } from "@/lib/archive";
+import { saveCustomFieldValues } from "@/lib/custom-fields";
 
 export interface ActionResult {
   error?: string;
@@ -60,9 +61,10 @@ export async function createCatalogItem(
   }
   await assertRefsBelongToOrg(ctx.orgId, parsed.data.unitId, parsed.data.groupId);
 
-  await prisma.catalogItem.create({
+  const item = await prisma.catalogItem.create({
     data: { ...parsed.data, orgId: ctx.orgId },
   });
+  await saveCustomFieldValues(ctx.orgId, "CATALOG_ITEM", item.id, formData);
 
   revalidatePath(`/${orgSlug}/catalog`);
   redirect(`/${orgSlug}/catalog`);
@@ -91,6 +93,7 @@ export async function updateCatalogItem(
       groupId: parsed.data.groupId ?? null,
     },
   });
+  await saveCustomFieldValues(ctx.orgId, "CATALOG_ITEM", itemId, formData);
 
   revalidatePath(`/${orgSlug}/catalog`);
   redirect(`/${orgSlug}/catalog`);

@@ -6,6 +6,7 @@ import { ClientForm } from "@/components/clients/client-form";
 import { getClientBalance } from "@/lib/balances";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientContactsSection } from "@/components/clients/client-contacts-section";
+import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function EditClientPage({
   params,
@@ -29,6 +30,10 @@ export default async function EditClientPage({
     where: { clientId: client.id },
     orderBy: { name: "asc" },
   });
+  const [customFieldDefs, customFieldValues] = await Promise.all([
+    listCustomFieldDefinitions(ctx.orgId, "CLIENT"),
+    getCustomFieldValues(client.id),
+  ]);
 
   return (
     <div className="flex max-w-lg flex-col gap-4">
@@ -38,6 +43,8 @@ export default async function EditClientPage({
         action={boundAction}
         defaultValues={client}
         submitLabel="Сохранить"
+        customFieldDefs={customFieldDefs}
+        customFieldValues={customFieldValues}
       />
       {(balance.receivable !== 0 || balance.payable !== 0) && (
         <Card>
@@ -47,11 +54,11 @@ export default async function EditClientPage({
           <CardContent className="flex flex-col gap-1 text-sm">
             <div>
               <span className="text-muted-foreground">Должен нам: </span>
-              {balance.receivable.toFixed(2)} ₽
+              {balance.receivable.toFixed(2)} {balance.baseCurrency}
             </div>
             <div>
               <span className="text-muted-foreground">Должны ему (как поставщику): </span>
-              {balance.payable.toFixed(2)} ₽
+              {balance.payable.toFixed(2)} {balance.baseCurrency}
             </div>
           </CardContent>
         </Card>

@@ -11,7 +11,7 @@ export default async function NewOrderPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [clients, employees, catalogItems, contracts, salesChannels] = await Promise.all([
+  const [clients, employees, catalogItems, contracts, salesChannels, legalEntities] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
@@ -32,6 +32,7 @@ export default async function NewOrderPage({
     }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
   ]);
 
   return (
@@ -58,6 +59,7 @@ export default async function NewOrderPage({
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
+        legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
       />
     </div>
   );
