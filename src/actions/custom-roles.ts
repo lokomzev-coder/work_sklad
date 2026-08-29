@@ -33,7 +33,13 @@ export async function createCustomRole(
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
 
-  const permissions: CustomRolePermissions = { orders: { scope: parsed.data.ordersScope } };
+  // One scope value governs both document kinds — a separate control for
+  // "заказы поставщику" would double the UI for a distinction nobody has
+  // asked to make independently; extend to two selects if that ever changes.
+  const permissions: CustomRolePermissions = {
+    orders: { scope: parsed.data.ordersScope },
+    purchaseOrders: { scope: parsed.data.ordersScope },
+  };
 
   try {
     await prisma.customRole.create({

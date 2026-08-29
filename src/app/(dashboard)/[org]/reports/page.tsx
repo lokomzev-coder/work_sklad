@@ -6,5 +6,5 @@ export default async function ReportsIndexPage({
   params: Promise<{ org: string }>;
 }) {
   const { org } = await params;
-  redirect(`/${org}/reports/turnover`);
+  redirect(`/${org}/reports/overview`);
 }

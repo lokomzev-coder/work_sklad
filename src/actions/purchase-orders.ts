@@ -5,8 +5,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
-import { getDefaultStatusId } from "@/lib/document-statuses";
+import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
@@ -28,6 +29,7 @@ export interface UpsertPurchaseOrderInput {
   contractId?: string | null;
   legalEntityId?: string | null;
   lineItems: { catalogItemId: string; quantity: number; unitCost: number }[];
+  customFieldValues?: Record<string, string>;
 }
 
 export interface UpsertPurchaseOrderResult {
@@ -44,6 +46,22 @@ async function nextPurchaseOrderNumber(orgId: string): Promise<number> {
   return (last?.number ?? 0) + 1;
 }
 
+/** Block I: an OWN-scoped custom role may only touch purchase orders assigned
+ * to its own Employee record — mirrors assertOwnOrderScope in actions/orders.ts. */
+async function assertOwnPurchaseOrderScope(
+  ctx: { orgId: string; purchaseOrderScope: "ALL" | "OWN"; employeeId: string | null },
+  purchaseOrderId: string,
+) {
+  if (ctx.purchaseOrderScope !== "OWN") return;
+  const purchaseOrder = await prisma.purchaseOrder.findFirst({
+    where: { id: purchaseOrderId, orgId: ctx.orgId },
+    select: { assignedEmployeeId: true },
+  });
+  if (!purchaseOrder || purchaseOrder.assignedEmployeeId !== ctx.employeeId) {
+    throw new Error("Недостаточно прав: этот заказ поставщику назначен не вам");
+  }
+}
+
 export async function upsertPurchaseOrder(
   orgSlug: string,
   purchaseOrderId: string | null,
@@ -51,10 +69,18 @@ export async function upsertPurchaseOrder(
 ): Promise<UpsertPurchaseOrderResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx.role, "orders", "edit");
+  if (purchaseOrderId) {
+    await assertOwnPurchaseOrderScope(ctx, purchaseOrderId);
+  }
 
   const parsed = upsertPurchaseOrderSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
+  }
+  // Same override-not-reject approach as upsertOrder: an OWN-scoped role can
+  // only ever create/keep POs assigned to themselves.
+  if (ctx.purchaseOrderScope === "OWN") {
+    parsed.data.assignedEmployeeId = ctx.employeeId;
   }
 
   const catalogItemIds = [
@@ -131,6 +157,10 @@ export async function upsertPurchaseOrder(
     isNewPurchaseOrder = true;
   }
 
+  if (input.customFieldValues) {
+    await saveCustomFieldValuesRecord(ctx.orgId, "PURCHASE_ORDER", purchaseOrderIdResult, input.customFieldValues);
+  }
+
   revalidatePath(`/${orgSlug}/purchase-orders`);
   revalidatePath(`/${orgSlug}/purchase-orders/${purchaseOrderIdResult}`);
   if (isNewPurchaseOrder) {
@@ -146,12 +176,28 @@ export async function updatePurchaseOrderStatus(
 ) {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx.role, "orders", "edit");
+  await assertOwnPurchaseOrderScope(ctx, purchaseOrderId);
+
+  const purchaseOrder = await prisma.purchaseOrder.findFirst({
+    where: { id: purchaseOrderId, orgId: ctx.orgId },
+    select: { statusId: true },
+  });
+  if (!purchaseOrder) {
+    throw new Error("Заказ поставщику не найден");
+  }
 
   const status = await prisma.documentStatus.findFirst({
     where: { id: statusId, orgId: ctx.orgId, kind: "PURCHASE_ORDER" },
   });
   if (!status) {
     throw new Error("Статус не найден");
+  }
+
+  if (statusId !== purchaseOrder.statusId) {
+    const allowed = await getAllowedNextStatusIds(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, ctx.role);
+    if (!allowed.has(statusId)) {
+      throw new Error("Такой переход между статусами запрещён");
+    }
   }
 
   await prisma.purchaseOrder.update({

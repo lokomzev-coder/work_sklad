@@ -12,6 +12,8 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { statusBadgeClass } from "@/lib/status-color";
+import { formatMoney } from "@/lib/format";
 
 export default async function PurchaseOrdersPage({
   params,
@@ -22,7 +24,12 @@ export default async function PurchaseOrdersPage({
   const ctx = await getOrgContext(org);
 
   const purchaseOrders = await prisma.purchaseOrder.findMany({
-    where: { orgId: ctx.orgId },
+    where: {
+      orgId: ctx.orgId,
+      // Block I: an OWN-scoped custom role only sees purchase orders
+      // assigned to their own Employee record.
+      ...(ctx.purchaseOrderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
+    },
     orderBy: { number: "desc" },
     include: { supplier: true, lineItems: true, status: true },
   });
@@ -63,6 +70,7 @@ export default async function PurchaseOrdersPage({
                   (sum, li) => sum + Number(li.unitPriceSnapshot) * Number(li.quantity),
                   0,
                 );
+                const currency = po.lineItems[0]?.currency ?? "RUB";
                 return (
                   <TableRow key={po.id}>
                     <TableCell>
@@ -72,9 +80,11 @@ export default async function PurchaseOrdersPage({
                     </TableCell>
                     <TableCell>{po.supplier?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{po.status.name}</Badge>
+                      <Badge variant="outline" className={statusBadgeClass(po.status.color)}>
+                        {po.status.name}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-right">{total.toFixed(2)} ₽</TableCell>
+                    <TableCell className="text-right">{formatMoney(total, currency)}</TableCell>
                   </TableRow>
                 );
               })

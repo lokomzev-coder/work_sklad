@@ -58,7 +58,7 @@ export default async function PrintPurchaseOrderPage({
       lines={purchaseOrder.lineItems.map((li) => ({
         name: li.catalogItem.name,
         quantity: li.quantity.toString(),
-        unit: li.catalogItem.unit?.shortName ?? "шт",
+        unit: li.catalogItem.unit?.shortName ?? "—",
         price: Number(li.unitPriceSnapshot).toFixed(2),
         sum: (Number(li.unitPriceSnapshot) * Number(li.quantity)).toFixed(2),
       }))}

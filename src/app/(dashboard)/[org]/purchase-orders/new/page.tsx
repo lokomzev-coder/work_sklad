@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-form";
+import { listCustomFieldDefinitions } from "@/lib/custom-fields";
 
 export default async function NewPurchaseOrderPage({
   params,
@@ -10,7 +11,7 @@ export default async function NewPurchaseOrderPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [suppliers, employees, catalogItems, contracts, legalEntities] = await Promise.all([
+  const [suppliers, employees, catalogItems, contracts, legalEntities, customFieldDefs] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
@@ -25,6 +26,7 @@ export default async function NewPurchaseOrderPage({
     }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
   ]);
 
   return (
@@ -43,6 +45,7 @@ export default async function NewPurchaseOrderPage({
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
+        customFieldDefs={customFieldDefs}
       />
     </div>
   );

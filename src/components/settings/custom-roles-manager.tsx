@@ -55,7 +55,7 @@ export function CustomRolesManager({ orgSlug, roles }: { orgSlug: string; roles:
         <TableHeader>
           <TableRow>
             <TableHead>Название</TableHead>
-            <TableHead>Видимость заказов</TableHead>
+            <TableHead>Видимость заказов/закупок</TableHead>
             <TableHead>Сотрудников</TableHead>
             <TableHead className="w-0" />
           </TableRow>

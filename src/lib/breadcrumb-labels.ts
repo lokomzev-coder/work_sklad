@@ -1,0 +1,35 @@
+/** URL-slug → человекочитаемая подпись для автогенерируемых хлебных крошек
+ * (src/components/layout/page-breadcrumb.tsx). Покрывает все сегменты путей
+ * внутри (dashboard)/[org]/**. Сегмент, которого здесь нет и который не
+ * похож на "new", считается динамическим id и рендерится как "Карточка". */
+export const BREADCRUMB_LABELS: Record<string, string> = {
+  employees: "Сотрудники",
+  clients: "Клиенты",
+  catalog: "Товары и услуги",
+  groups: "Группы",
+  units: "Единицы измерения",
+  characteristics: "Характеристики",
+  warehouse: "Склад",
+  stock: "Остатки",
+  stores: "Склады",
+  orders: "Заказы",
+  channels: "Каналы продаж",
+  "purchase-orders": "Заказы поставщику",
+  payments: "Платежи",
+  contracts: "Договоры",
+  reports: "Отчёты",
+  overview: "Обзор",
+  turnover: "Обороты",
+  money: "Деньги",
+  pnl: "Прибыли и убытки",
+  "sales-by-client": "Продажи по клиентам",
+  vault: "Пароли",
+  settings: "Настройки",
+  "legal-entities": "Юридические лица",
+  currencies: "Валюты",
+  "custom-fields": "Доп. поля",
+  roles: "Роли",
+  statuses: "Статусы",
+  webhooks: "Вебхуки",
+  new: "Новый",
+};

@@ -78,6 +78,11 @@ export function assertPermission(
  */
 export interface CustomRolePermissions {
   orders?: { scope: Scope };
+  purchaseOrders?: { scope: Scope };
+}
+
+function parseScope(value: { scope?: unknown } | undefined): Scope | undefined {
+  return value?.scope === "OWN" || value?.scope === "ALL" ? value.scope : undefined;
 }
 
 /** Defensive JSON parse — an empty/malformed `permissions` value degrades to
@@ -85,7 +90,10 @@ export interface CustomRolePermissions {
 export function parseCustomRolePermissions(raw: unknown): CustomRolePermissions {
   if (!raw || typeof raw !== "object") return {};
   const obj = raw as Record<string, unknown>;
-  const orders = obj.orders as { scope?: unknown } | undefined;
-  const scope = orders?.scope === "OWN" || orders?.scope === "ALL" ? orders.scope : undefined;
-  return scope ? { orders: { scope } } : {};
+  const ordersScope = parseScope(obj.orders as { scope?: unknown } | undefined);
+  const purchaseOrdersScope = parseScope(obj.purchaseOrders as { scope?: unknown } | undefined);
+  return {
+    ...(ordersScope ? { orders: { scope: ordersScope } } : {}),
+    ...(purchaseOrdersScope ? { purchaseOrders: { scope: purchaseOrdersScope } } : {}),
+  };
 }

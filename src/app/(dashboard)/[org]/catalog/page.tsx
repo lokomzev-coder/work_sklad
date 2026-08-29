@@ -11,11 +11,14 @@ import {
 } from "@/components/data-table/archivable-entity-table";
 import { ArchiveRowActions } from "@/components/data-table/archive-row-actions";
 import { CatalogSubnav } from "@/components/catalog/catalog-subnav";
+import { QuerySelectFilter } from "@/components/forms/query-select-filter";
+import { flattenGroupTree } from "@/lib/catalog-groups";
 import {
   archiveCatalogItem,
   restoreCatalogItem,
   deleteCatalogItem,
 } from "@/actions/catalog";
+import { formatMoney } from "@/lib/format";
 
 const TYPE_LABEL: Record<string, string> = {
   PRODUCT: "Товар",
@@ -28,20 +31,27 @@ export default async function CatalogPage({
   searchParams,
 }: {
   params: Promise<{ org: string }>;
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; group?: string }>;
 }) {
   const { org } = await params;
-  const { status } = await searchParams;
+  const { status, group: groupFilter } = await searchParams;
   const ctx = await getOrgContext(org);
 
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
 
-  const items = await prisma.catalogItem.findMany({
-    where: { orgId: ctx.orgId, status: activeTab },
-    orderBy: { createdAt: "desc" },
-    include: { group: true },
-  });
+  const [items, groups] = await Promise.all([
+    prisma.catalogItem.findMany({
+      where: {
+        orgId: ctx.orgId,
+        status: activeTab,
+        ...(groupFilter ? { groupId: groupFilter } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: { group: true },
+    }),
+    prisma.catalogGroup.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+  ]);
 
   const canEdit = can(ctx.role, "catalog", "edit");
 
@@ -57,7 +67,21 @@ export default async function CatalogPage({
         )}
       </div>
 
-      <StatusTabs basePath={`/${org}/catalog`} active={activeTab} />
+      <div className="flex items-center justify-between gap-4">
+        <StatusTabs basePath={`/${org}/catalog`} active={activeTab} />
+        {groups.length > 0 && (
+          <QuerySelectFilter
+            basePath={`/${org}/catalog`}
+            paramName="group"
+            value={groupFilter ?? ""}
+            allLabel="Все группы"
+            options={flattenGroupTree(groups).map(({ group, path }) => ({
+              value: group.id,
+              label: path,
+            }))}
+          />
+        )}
+      </div>
 
       <ArchivableEntityTable
         data={items}
@@ -77,7 +101,7 @@ export default async function CatalogPage({
           { header: "Группа", cell: (row) => row.group?.name ?? "—" },
           {
             header: "Цена",
-            cell: (row) => `${row.unitPrice.toString()} ${row.currency}`,
+            cell: (row) => formatMoney(Number(row.unitPrice), row.currency),
           },
         ]}
         rowActions={

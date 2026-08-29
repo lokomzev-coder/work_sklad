@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "playwright-phone": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--device", "iPhone 15",
+        "--user-data-dir", "C:\\Windows\\TEMP\\claude\\playwright-profiles\\phone"
+      ]
+    },
+    "playwright-tablet": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--device", "iPad Pro 11",
+        "--user-data-dir", "C:\\Windows\\TEMP\\claude\\playwright-profiles\\tablet"
+      ]
+    }
+  }
+}

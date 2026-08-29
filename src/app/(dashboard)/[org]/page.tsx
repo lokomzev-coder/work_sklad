@@ -1,8 +1,15 @@
 import Link from "next/link";
+import { Users, Contact, Package, ShoppingCart, DollarSign } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { getOrgBaseCurrency } from "@/lib/currency";
+import { formatMoney } from "@/lib/format";
+import { statusBadgeClass } from "@/lib/status-color";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { KpiCard } from "@/components/dashboard/kpi-card";
+import { AreaTrendChart } from "@/components/charts/area-trend-chart";
+import { StatusDonutChart } from "@/components/charts/status-donut-chart";
 import {
   Table,
   TableHeader,
@@ -12,6 +19,8 @@ import {
   TableCell,
 } from "@/components/ui/table";
 
+const TREND_DAYS = 14;
+
 export default async function OrgDashboardPage({
   params,
 }: {
@@ -20,66 +29,137 @@ export default async function OrgDashboardPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [employeeCount, clientCount, catalogCount, orderCount, recentOrders, revenueRows] =
-    await Promise.all([
-      prisma.employee.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-      prisma.client.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-      prisma.catalogItem.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-      prisma.order.count({ where: { orgId: ctx.orgId } }),
-      prisma.order.findMany({
-        where: { orgId: ctx.orgId },
-        orderBy: { number: "desc" },
-        take: 5,
-        include: { client: true, lineItems: true, status: true },
-      }),
-      prisma.$queryRaw<{ total: string | null }[]>`
-        SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
-        FROM "OrderLineItem" oli
-        JOIN "Order" o ON o.id = oli."orderId"
-        WHERE o."orgId" = ${ctx.orgId}
-      `,
-    ]);
+  // Block I: an OWN-scoped custom role only sees/counts/sums orders assigned
+  // to their own Employee record — same rule as the /orders list page,
+  // applied here too so the dashboard doesn't leak other employees' orders.
+  const ordersWhere = {
+    orgId: ctx.orgId,
+    ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
+  };
+
+  const now = new Date();
+  const trendFrom = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (TREND_DAYS - 1)),
+  );
+
+  const [
+    employeeCount,
+    clientCount,
+    catalogCount,
+    orderCount,
+    recentOrders,
+    allOrdersForBreakdown,
+    trendLines,
+    revenueRows,
+    baseCurrency,
+  ] = await Promise.all([
+    prisma.employee.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+    prisma.client.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+    prisma.catalogItem.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+    prisma.order.count({ where: ordersWhere }),
+    prisma.order.findMany({
+      where: ordersWhere,
+      orderBy: { number: "desc" },
+      take: 5,
+      include: { client: true, lineItems: true, status: true },
+    }),
+    prisma.order.findMany({
+      where: ordersWhere,
+      select: { status: { select: { name: true, color: true } } },
+    }),
+    prisma.orderLineItem.findMany({
+      where: { order: { ...ordersWhere, createdAt: { gte: trendFrom } } },
+      select: {
+        quantity: true,
+        unitPriceSnapshot: true,
+        order: { select: { createdAt: true } },
+      },
+    }),
+    ctx.orderScope === "OWN"
+      ? prisma.$queryRaw<{ total: string | null }[]>`
+          SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
+          FROM "OrderLineItem" oli
+          JOIN "Order" o ON o.id = oli."orderId"
+          WHERE o."orgId" = ${ctx.orgId} AND o."assignedEmployeeId" = ${ctx.employeeId}
+        `
+      : prisma.$queryRaw<{ total: string | null }[]>`
+          SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
+          FROM "OrderLineItem" oli
+          JOIN "Order" o ON o.id = oli."orderId"
+          WHERE o."orgId" = ${ctx.orgId}
+        `,
+    getOrgBaseCurrency(ctx.orgId),
+  ]);
 
   const totalRevenue = Number(revenueRows[0]?.total ?? 0);
 
+  const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+  const dailyMap = new Map<string, number>();
+  for (let i = 0; i < TREND_DAYS; i++) {
+    const d = new Date(trendFrom);
+    d.setUTCDate(d.getUTCDate() + i);
+    dailyMap.set(dayKey(d), 0);
+  }
+  for (const line of trendLines) {
+    const key = dayKey(line.order.createdAt);
+    if (!dailyMap.has(key)) continue;
+    dailyMap.set(key, (dailyMap.get(key) ?? 0) + Number(line.unitPriceSnapshot) * Number(line.quantity));
+  }
+  const revenueSeries = [...dailyMap.entries()].map(([date, revenue]) => ({ date, revenue }));
+
+  const statusMap = new Map<string, { name: string; color: string; count: number }>();
+  for (const o of allOrdersForBreakdown) {
+    const row = statusMap.get(o.status.name) ?? { name: o.status.name, color: o.status.color, count: 0 };
+    row.count += 1;
+    statusMap.set(o.status.name, row);
+  }
+
   const stats = [
-    { label: "Сотрудники", value: employeeCount, href: `/${org}/employees` },
-    { label: "Клиенты", value: clientCount, href: `/${org}/clients` },
-    { label: "Товары и услуги", value: catalogCount, href: `/${org}/catalog` },
-    { label: "Заказы", value: orderCount, href: `/${org}/orders` },
+    { label: "Сотрудники", value: employeeCount, href: `/${org}/employees`, icon: Users },
+    { label: "Клиенты", value: clientCount, href: `/${org}/clients`, icon: Contact },
+    { label: "Товары и услуги", value: catalogCount, href: `/${org}/catalog`, icon: Package },
+    { label: "Заказы", value: orderCount, href: `/${org}/orders`, icon: ShoppingCart },
   ];
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-2xl font-semibold">Дашборд</h1>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Link key={stat.href} href={stat.href}>
-            <Card className="transition-colors hover:bg-accent/50">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-normal text-muted-foreground">
-                  {stat.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-semibold">{stat.value}</div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Дашборд</h1>
+        <Link href={`/${org}/reports/overview`} className="text-sm text-primary hover:underline">
+          Полная отчётность →
+        </Link>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Сумма по всем заказам</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-semibold">
-            {totalRevenue.toLocaleString("ru-RU", { minimumFractionDigits: 2 })} ₽
-          </div>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+        {stats.map((stat) => (
+          <KpiCard key={stat.href} label={stat.label} value={String(stat.value)} icon={stat.icon} href={stat.href} />
+        ))}
+        <KpiCard label="Выручка (все заказы)" value={formatMoney(totalRevenue, baseCurrency)} icon={DollarSign} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Выручка за {TREND_DAYS} дней</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AreaTrendChart
+              data={revenueSeries}
+              series={[{ key: "revenue", label: "Выручка", color: "var(--chart-1)" }]}
+              format={{ kind: "money", currency: baseCurrency }}
+              className="h-56 w-full"
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Заказы по статусам</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StatusDonutChart data={[...statusMap.values()]} className="h-56 w-full" />
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
@@ -120,9 +200,11 @@ export default async function OrgDashboardPage({
                       </TableCell>
                       <TableCell>{order.client?.name ?? "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{order.status.name}</Badge>
+                        <Badge variant="outline" className={statusBadgeClass(order.status.color)}>
+                          {order.status.name}
+                        </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{total.toFixed(2)} ₽</TableCell>
+                      <TableCell className="text-right">{formatMoney(total, baseCurrency)}</TableCell>
                     </TableRow>
                   );
                 })

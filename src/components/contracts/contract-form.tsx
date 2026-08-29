@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
+import { type ComboboxOption } from "@/components/forms/entity-combobox";
+import { ClientCombobox } from "@/components/forms/client-combobox";
 import type { ActionResult } from "@/actions/contracts";
 
 const initialState: ActionResult = {};
@@ -32,12 +33,14 @@ export function ContractForm({ orgSlug, action, clientOptions }: ContractFormPro
           <div className="flex flex-col gap-2">
             <Label>Контрагент</Label>
             <input type="hidden" name="clientId" value={clientId ?? ""} />
-            <EntityCombobox
+            <ClientCombobox
+              orgSlug={orgSlug}
               options={clientOptions}
               value={clientId}
               onChange={setClientId}
               placeholder="Выберите контрагента"
               emptyMessage="Контрагенты не найдены"
+              createLabel="контрагента"
             />
           </div>
           <div className="flex flex-col gap-2">

@@ -14,7 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
+import { type ComboboxOption } from "@/components/forms/entity-combobox";
+import { ClientCombobox } from "@/components/forms/client-combobox";
 import type { ActionResult } from "@/actions/payments";
 
 const initialState: ActionResult = {};
@@ -52,12 +53,14 @@ export function PaymentForm({ orgSlug, action, counterpartyOptions }: PaymentFor
           <div className="flex flex-col gap-2">
             <Label>Контрагент</Label>
             <input type="hidden" name="counterpartyId" value={counterpartyId ?? ""} />
-            <EntityCombobox
+            <ClientCombobox
+              orgSlug={orgSlug}
               options={counterpartyOptions}
               value={counterpartyId}
               onChange={setCounterpartyId}
               placeholder="Выберите контрагента"
               emptyMessage="Контрагенты не найдены"
+              createLabel="контрагента"
             />
           </div>
           <div className="flex gap-4">

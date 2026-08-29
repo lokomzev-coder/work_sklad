@@ -5,8 +5,9 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
-import { getDefaultStatusId } from "@/lib/document-statuses";
+import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
@@ -30,6 +31,7 @@ export interface UpsertOrderInput {
   salesChannelId?: string | null;
   legalEntityId?: string | null;
   lineItems: { catalogItemId: string; variantId?: string | null; quantity: number }[];
+  customFieldValues?: Record<string, string>;
 }
 
 export interface UpsertOrderResult {
@@ -194,6 +196,10 @@ export async function upsertOrder(
     isNewOrder = true;
   }
 
+  if (input.customFieldValues) {
+    await saveCustomFieldValuesRecord(ctx.orgId, "ORDER", orderIdResult, input.customFieldValues);
+  }
+
   revalidatePath(`/${orgSlug}/orders`);
   revalidatePath(`/${orgSlug}/orders/${orderIdResult}`);
   if (isNewOrder) {
@@ -211,11 +217,26 @@ export async function updateOrderStatus(
   assertPermission(ctx.role, "orders", "edit");
   await assertOwnOrderScope(ctx, orderId);
 
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, orgId: ctx.orgId },
+    select: { statusId: true },
+  });
+  if (!order) {
+    throw new Error("Заказ не найден");
+  }
+
   const status = await prisma.documentStatus.findFirst({
     where: { id: statusId, orgId: ctx.orgId, kind: "ORDER" },
   });
   if (!status) {
     throw new Error("Статус не найден");
+  }
+
+  if (statusId !== order.statusId) {
+    const allowed = await getAllowedNextStatusIds(ctx.orgId, "ORDER", order.statusId, ctx.role);
+    if (!allowed.has(statusId)) {
+      throw new Error("Такой переход между статусами запрещён");
+    }
   }
 
   await prisma.order.update({

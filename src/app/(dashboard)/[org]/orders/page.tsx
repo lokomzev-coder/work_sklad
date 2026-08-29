@@ -13,25 +13,35 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { OrdersSubnav } from "@/components/orders/orders-subnav";
+import { QuerySelectFilter } from "@/components/forms/query-select-filter";
+import { statusBadgeClass } from "@/lib/status-color";
+import { formatMoney } from "@/lib/format";
 
 export default async function OrdersPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ org: string }>;
+  searchParams: Promise<{ channel?: string }>;
 }) {
   const { org } = await params;
+  const { channel } = await searchParams;
   const ctx = await getOrgContext(org);
 
-  const orders = await prisma.order.findMany({
-    where: {
-      orgId: ctx.orgId,
-      // Block I: an OWN-scoped custom role only sees orders assigned to
-      // their own Employee record.
-      ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
-    },
-    orderBy: { number: "desc" },
-    include: { client: true, lineItems: true, status: true },
-  });
+  const [orders, salesChannels] = await Promise.all([
+    prisma.order.findMany({
+      where: {
+        orgId: ctx.orgId,
+        // Block I: an OWN-scoped custom role only sees orders assigned to
+        // their own Employee record.
+        ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
+        ...(channel ? { salesChannelId: channel } : {}),
+      },
+      orderBy: { number: "desc" },
+      include: { client: true, lineItems: true, status: true },
+    }),
+    prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+  ]);
 
   const canEdit = can(ctx.role, "orders", "edit");
 
@@ -46,6 +56,16 @@ export default async function OrdersPage({
           </Button>
         )}
       </div>
+
+      {salesChannels.length > 0 && (
+        <QuerySelectFilter
+          basePath={`/${org}/orders`}
+          paramName="channel"
+          value={channel ?? ""}
+          allLabel="Все каналы продаж"
+          options={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
+        />
+      )}
 
       <div className="rounded-md border">
         <Table>
@@ -70,6 +90,7 @@ export default async function OrdersPage({
                   (sum, li) => sum + Number(li.unitPriceSnapshot) * Number(li.quantity),
                   0,
                 );
+                const currency = order.lineItems[0]?.currency ?? "RUB";
                 return (
                   <TableRow key={order.id}>
                     <TableCell>
@@ -79,9 +100,11 @@ export default async function OrdersPage({
                     </TableCell>
                     <TableCell>{order.client?.name ?? "—"}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{order.status.name}</Badge>
+                      <Badge variant="outline" className={statusBadgeClass(order.status.color)}>
+                        {order.status.name}
+                      </Badge>
                     </TableCell>
-                    <TableCell className="text-right">{total.toFixed(2)} ₽</TableCell>
+                    <TableCell className="text-right">{formatMoney(total, currency)}</TableCell>
                   </TableRow>
                 );
               })

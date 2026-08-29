@@ -82,13 +82,14 @@ export function CommandPalette({ orgSlug }: CommandPaletteProps) {
       <Button
         type="button"
         variant="outline"
-        size="sm"
+        size="icon"
         onClick={() => setOpen(true)}
-        className="w-64 justify-start gap-2 text-muted-foreground font-normal"
+        aria-label="Поиск"
+        className="shrink-0 justify-start gap-2 text-muted-foreground font-normal sm:w-64 sm:px-3"
       >
         <Search className="size-4" />
-        Поиск...
-        <kbd className="ml-auto rounded border bg-muted px-1.5 py-0.5 text-[0.7rem] font-medium">
+        <span className="hidden sm:inline">Поиск...</span>
+        <kbd className="ml-auto hidden rounded border bg-muted px-1.5 py-0.5 text-[0.7rem] font-medium sm:inline">
           ⌘K
         </kbd>
       </Button>

@@ -25,30 +25,16 @@ export async function getCustomFieldValues(entityId: string): Promise<Record<str
   return Object.fromEntries(rows.map((r) => [r.definitionId, r.value ?? ""]));
 }
 
-/** Upserts one value per definition for `entityId` from a flat `customField_<definitionId>`
- * FormData shape — empty strings clear the value rather than storing "". */
-export async function saveCustomFieldValues(
-  orgId: string,
-  entityType: CustomFieldEntityType,
-  entityId: string,
-  formData: FormData,
-): Promise<void> {
-  const defs = await listCustomFieldDefinitions(orgId, entityType);
+/** Shared upsert core — `values` is definitionId -> raw string (BOOLEAN as
+ * "true"/"false", everything else free text). Empty/missing non-BOOLEAN
+ * values clear the row rather than storing "". */
+async function upsertValues(defs: CustomFieldDef[], entityId: string, values: Record<string, string | undefined>): Promise<void> {
   if (defs.length === 0) return;
 
   await prisma.$transaction(
     defs.map((def) => {
-      const fieldName = `customField_${def.id}`;
-      let value: string | null;
-      if (def.type === "BOOLEAN") {
-        // Unchecked checkboxes submit no key at all — absence is a real
-        // "false", not "no value", so this is the one type that never nulls out.
-        value = formData.has(fieldName) ? "true" : "false";
-      } else {
-        const raw = formData.get(fieldName);
-        const trimmed = typeof raw === "string" ? raw.trim() : "";
-        value = trimmed || null;
-      }
+      const raw = values[def.id];
+      const value = def.type === "BOOLEAN" ? (raw === "true" ? "true" : "false") : (raw?.trim() || null);
       return prisma.customFieldValue.upsert({
         where: { definitionId_entityId: { definitionId: def.id, entityId } },
         create: { definitionId: def.id, entityId, value },
@@ -56,4 +42,37 @@ export async function saveCustomFieldValues(
       });
     }),
   );
+}
+
+/** Upserts one value per definition for `entityId` from a flat `customField_<definitionId>`
+ * FormData shape — for pages using a native `<form action>` (Client, CatalogItem). */
+export async function saveCustomFieldValues(
+  orgId: string,
+  entityType: CustomFieldEntityType,
+  entityId: string,
+  formData: FormData,
+): Promise<void> {
+  const defs = await listCustomFieldDefinitions(orgId, entityType);
+  const values = Object.fromEntries(
+    defs.map((def) => {
+      const fieldName = `customField_${def.id}`;
+      if (def.type === "BOOLEAN") return [def.id, formData.has(fieldName) ? "true" : "false"];
+      const raw = formData.get(fieldName);
+      return [def.id, typeof raw === "string" ? raw : ""];
+    }),
+  );
+  await upsertValues(defs, entityId, values);
+}
+
+/** Same as saveCustomFieldValues, but for pages that call a Server Action
+ * with a plain JS object instead of submitting a native form (Order,
+ * PurchaseOrder — their forms are driven entirely by React state). */
+export async function saveCustomFieldValuesRecord(
+  orgId: string,
+  entityType: CustomFieldEntityType,
+  entityId: string,
+  values: Record<string, string>,
+): Promise<void> {
+  const defs = await listCustomFieldDefinitions(orgId, entityType);
+  await upsertValues(defs, entityId, values);
 }

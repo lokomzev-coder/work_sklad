@@ -5,7 +5,8 @@ import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-f
 import { PurchaseOrderStatusSelect } from "@/components/purchase-orders/purchase-order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
 import { PrintButton } from "@/components/print/print-button";
-import { listDocumentStatuses } from "@/lib/document-statuses";
+import { getSelectableStatuses } from "@/lib/document-statuses";
+import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function EditPurchaseOrderPage({
   params,
@@ -23,6 +24,9 @@ export default async function EditPurchaseOrderPage({
   if (!purchaseOrder) {
     notFound();
   }
+  if (ctx.purchaseOrderScope === "OWN" && purchaseOrder.assignedEmployeeId !== ctx.employeeId) {
+    notFound();
+  }
 
   const referencedCatalogItemIds = purchaseOrder.lineItems.map((li) => li.catalogItemId);
 
@@ -36,6 +40,8 @@ export default async function EditPurchaseOrderPage({
     contracts,
     legalEntities,
     statusOptions,
+    customFieldDefs,
+    customFieldValues,
   ] = await Promise.all([
     prisma.client.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
     prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
@@ -49,7 +55,9 @@ export default async function EditPurchaseOrderPage({
     prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    listDocumentStatuses(ctx.orgId, "PURCHASE_ORDER"),
+    getSelectableStatuses(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, ctx.role),
+    listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
+    getCustomFieldValues(purchaseOrder.id),
   ]);
 
   const suppliers = referencedSupplier
@@ -123,6 +131,7 @@ export default async function EditPurchaseOrderPage({
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
+        customFieldDefs={customFieldDefs}
         defaultValues={{
           supplierId: purchaseOrder.supplierId,
           assignedEmployeeId: purchaseOrder.assignedEmployeeId,
@@ -133,6 +142,7 @@ export default async function EditPurchaseOrderPage({
             quantity: li.quantity.toString(),
             unitCost: li.unitPriceSnapshot.toString(),
           })),
+          customFieldValues,
         }}
       />
       <FulfillmentPanel

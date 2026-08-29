@@ -14,20 +14,21 @@ import {
 interface OrgSwitcherProps {
   memberships: OrgMembership[];
   currentOrgSlug: string;
+  collapsed?: boolean;
 }
 
-export function OrgSwitcher({ memberships, currentOrgSlug }: OrgSwitcherProps) {
+export function OrgSwitcher({ memberships, currentOrgSlug, collapsed }: OrgSwitcherProps) {
   const router = useRouter();
   const current = memberships.find((m) => m.orgSlug === currentOrgSlug);
   const orgName = current?.orgName ?? currentOrgSlug;
 
   if (memberships.length <= 1) {
     return (
-      <div className="mb-6 flex items-center gap-2.5 px-1">
+      <div className={cn("mb-6 flex items-center gap-2.5 px-1", collapsed && "justify-center px-0")}>
         <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
           {orgName.charAt(0).toUpperCase()}
         </div>
-        <span className="truncate text-sm font-semibold">{orgName}</span>
+        {!collapsed && <span className="truncate text-sm font-semibold">{orgName}</span>}
       </div>
     );
   }
@@ -38,15 +39,20 @@ export function OrgSwitcher({ memberships, currentOrgSlug }: OrgSwitcherProps) {
         className={cn(
           "mb-6 flex w-full items-center gap-2.5 rounded-lg px-1 py-1 text-left outline-none",
           "hover:bg-sidebar-accent",
+          collapsed && "justify-center px-0",
         )}
       >
         <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-semibold text-sidebar-primary-foreground">
           {orgName.charAt(0).toUpperCase()}
         </div>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {orgName}
-        </span>
-        <ChevronsUpDown className="size-4 shrink-0 text-sidebar-foreground/50" />
+        {!collapsed && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+              {orgName}
+            </span>
+            <ChevronsUpDown className="size-4 shrink-0 text-sidebar-foreground/50" />
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         {memberships.map((m) => (

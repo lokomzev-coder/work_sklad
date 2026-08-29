@@ -12,6 +12,10 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { statusBadgeClass } from "@/lib/status-color";
+import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 
 export default async function PaymentsPage({
   params,
@@ -61,13 +65,21 @@ export default async function PaymentsPage({
                 <TableRow key={p.id}>
                   <TableCell>{p.createdAt.toLocaleDateString("ru-RU")}</TableCell>
                   <TableCell>
-                    <Badge variant={p.direction === "IN" ? "default" : "secondary"}>
+                    <Badge
+                      variant="outline"
+                      className={cn("gap-1", statusBadgeClass(p.direction === "IN" ? "green" : "orange"))}
+                    >
+                      {p.direction === "IN" ? (
+                        <ArrowDownLeft className="size-3" />
+                      ) : (
+                        <ArrowUpRight className="size-3" />
+                      )}
                       {p.direction === "IN" ? "Поступление" : "Выплата"}
                     </Badge>
                   </TableCell>
                   <TableCell>{p.counterparty.name}</TableCell>
                   <TableCell className="text-right">
-                    {p.amount.toString()} {p.currency}
+                    {formatMoney(Number(p.amount), p.currency)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">{p.comment ?? "—"}</TableCell>
                 </TableRow>

@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/table";
 import { ReportsSubnav } from "@/components/reports/reports-subnav";
 import { PeriodFilter } from "@/components/reports/period-filter";
+import { statusBadgeClass } from "@/lib/status-color";
+import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 
 export default async function MoneyReportPage({
   params,
@@ -39,19 +43,19 @@ export default async function MoneyReportPage({
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Поступления за период</div>
-            <div className="text-xl font-semibold">{report.periodIn.toFixed(2)} {report.baseCurrency}</div>
+            <div className="text-xl font-semibold">{formatMoney(report.periodIn, report.baseCurrency)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Выплаты за период</div>
-            <div className="text-xl font-semibold">{report.periodOut.toFixed(2)} {report.baseCurrency}</div>
+            <div className="text-xl font-semibold">{formatMoney(report.periodOut, report.baseCurrency)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Текущий денежный остаток</div>
-            <div className="text-xl font-semibold">{report.currentBalance.toFixed(2)} {report.baseCurrency}</div>
+            <div className="text-xl font-semibold">{formatMoney(report.currentBalance, report.baseCurrency)}</div>
           </CardContent>
         </Card>
       </div>
@@ -79,14 +83,20 @@ export default async function MoneyReportPage({
                 <TableRow key={r.id}>
                   <TableCell>{r.createdAt.toLocaleDateString("ru-RU")}</TableCell>
                   <TableCell>
-                    <Badge variant={r.direction === "IN" ? "default" : "secondary"}>
+                    <Badge
+                      variant="outline"
+                      className={cn("gap-1", statusBadgeClass(r.direction === "IN" ? "green" : "orange"))}
+                    >
+                      {r.direction === "IN" ? (
+                        <ArrowDownLeft className="size-3" />
+                      ) : (
+                        <ArrowUpRight className="size-3" />
+                      )}
                       {r.direction === "IN" ? "Поступление" : "Выплата"}
                     </Badge>
                   </TableCell>
                   <TableCell>{r.counterpartyName}</TableCell>
-                  <TableCell className="text-right">
-                    {r.amount.toFixed(2)} {r.currency}
-                  </TableCell>
+                  <TableCell className="text-right">{formatMoney(r.amount, r.currency)}</TableCell>
                   <TableCell className="text-muted-foreground">{r.comment ?? "—"}</TableCell>
                 </TableRow>
               ))

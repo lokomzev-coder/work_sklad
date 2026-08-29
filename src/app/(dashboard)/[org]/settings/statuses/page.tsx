@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
-import { listDocumentStatuses } from "@/lib/document-statuses";
+import { listDocumentStatuses, listTransitions } from "@/lib/document-statuses";
 import { SettingsSubnav } from "@/components/settings/settings-subnav";
 import { DocumentStatusManager } from "@/components/settings/document-status-manager";
+import { DocumentStatusTransitionsManager } from "@/components/settings/document-status-transitions-manager";
 
 export default async function DocumentStatusesPage({
   params,
@@ -14,9 +15,11 @@ export default async function DocumentStatusesPage({
   const ctx = await getOrgContext(org);
   if (!can(ctx.role, "settings", "read")) notFound();
 
-  const [orderStatuses, purchaseOrderStatuses] = await Promise.all([
+  const [orderStatuses, purchaseOrderStatuses, orderTransitions, purchaseOrderTransitions] = await Promise.all([
     listDocumentStatuses(ctx.orgId, "ORDER"),
     listDocumentStatuses(ctx.orgId, "PURCHASE_ORDER"),
+    listTransitions(ctx.orgId, "ORDER"),
+    listTransitions(ctx.orgId, "PURCHASE_ORDER"),
   ]);
 
   return (
@@ -38,6 +41,33 @@ export default async function DocumentStatusesPage({
       <div className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Заказы поставщику</h2>
         <DocumentStatusManager orgSlug={org} kind="PURCHASE_ORDER" statuses={purchaseOrderStatuses} />
+      </div>
+
+      <div>
+        <h1 className="text-2xl font-semibold">Переходы между статусами</h1>
+        <p className="text-sm text-muted-foreground">
+          Опционально ограничьте, из какого статуса в какой можно переходить, и кому именно.
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Заказы</h2>
+        <DocumentStatusTransitionsManager
+          orgSlug={org}
+          kind="ORDER"
+          statuses={orderStatuses}
+          transitions={orderTransitions}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <h2 className="text-lg font-medium">Заказы поставщику</h2>
+        <DocumentStatusTransitionsManager
+          orgSlug={org}
+          kind="PURCHASE_ORDER"
+          statuses={purchaseOrderStatuses}
+          transitions={purchaseOrderTransitions}
+        />
       </div>
     </div>
   );

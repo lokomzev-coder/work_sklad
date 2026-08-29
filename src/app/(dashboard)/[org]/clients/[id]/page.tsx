@@ -6,7 +6,9 @@ import { ClientForm } from "@/components/clients/client-form";
 import { getClientBalance } from "@/lib/balances";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientContactsSection } from "@/components/clients/client-contacts-section";
+import { ClientAddressesSection } from "@/components/clients/client-addresses-section";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { formatMoney } from "@/lib/format";
 
 export default async function EditClientPage({
   params,
@@ -29,6 +31,10 @@ export default async function EditClientPage({
   const contacts = await prisma.clientContact.findMany({
     where: { clientId: client.id },
     orderBy: { name: "asc" },
+  });
+  const addresses = await prisma.clientAddress.findMany({
+    where: { clientId: client.id },
+    orderBy: { label: "asc" },
   });
   const [customFieldDefs, customFieldValues] = await Promise.all([
     listCustomFieldDefinitions(ctx.orgId, "CLIENT"),
@@ -54,16 +60,17 @@ export default async function EditClientPage({
           <CardContent className="flex flex-col gap-1 text-sm">
             <div>
               <span className="text-muted-foreground">Должен нам: </span>
-              {balance.receivable.toFixed(2)} {balance.baseCurrency}
+              {formatMoney(balance.receivable, balance.baseCurrency)}
             </div>
             <div>
               <span className="text-muted-foreground">Должны ему (как поставщику): </span>
-              {balance.payable.toFixed(2)} {balance.baseCurrency}
+              {formatMoney(balance.payable, balance.baseCurrency)}
             </div>
           </CardContent>
         </Card>
       )}
       <ClientContactsSection orgSlug={org} clientId={client.id} contacts={contacts} />
+      <ClientAddressesSection orgSlug={org} clientId={client.id} addresses={addresses} />
     </div>
   );
 }

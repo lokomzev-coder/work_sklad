@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
+import { ClientCombobox } from "@/components/forms/client-combobox";
+import { CustomFieldsEditor } from "@/components/settings/custom-fields-editor";
 import { upsertPurchaseOrder } from "@/actions/purchase-orders";
+import type { CustomFieldDef } from "@/lib/custom-fields";
+import { formatMoney } from "@/lib/format";
 
 interface CatalogOption {
   id: string;
@@ -31,12 +35,14 @@ interface PurchaseOrderFormProps {
   catalogOptions: CatalogOption[];
   contractOptions: ComboboxOption[];
   legalEntityOptions: ComboboxOption[];
+  customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
     supplierId: string | null;
     assignedEmployeeId: string | null;
     contractId: string | null;
     legalEntityId: string | null;
     lineItems: { catalogItemId: string; quantity: string; unitCost: string }[];
+    customFieldValues?: Record<string, string>;
   };
 }
 
@@ -52,6 +58,7 @@ export function PurchaseOrderForm({
   catalogOptions,
   contractOptions,
   legalEntityOptions,
+  customFieldDefs = [],
   defaultValues,
 }: PurchaseOrderFormProps) {
   const router = useRouter();
@@ -64,6 +71,9 @@ export function PurchaseOrderForm({
   const [contractId, setContractId] = useState<string | null>(defaultValues?.contractId ?? null);
   const [legalEntityId, setLegalEntityId] = useState<string | null>(
     defaultValues?.legalEntityId ?? null,
+  );
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(
+    defaultValues?.customFieldValues ?? {},
   );
   const [rows, setRows] = useState<LineItemRow[]>(() =>
     defaultValues?.lineItems.length
@@ -84,6 +94,9 @@ export function PurchaseOrderForm({
   const catalogById = new Map(catalogOptions.map((c) => [c.id, c]));
 
   const total = rows.reduce((sum, row) => sum + (Number(row.unitCost) || 0) * (Number(row.quantity) || 0), 0);
+  const totalCurrency =
+    rows.map((row) => (row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined)).find(Boolean)
+      ?.currency ?? "RUB";
 
   function updateRow(key: string, patch: Partial<LineItemRow>) {
     setRows((prev) => prev.map((row) => (row.key === key ? { ...row, ...patch } : row)));
@@ -124,6 +137,7 @@ export function PurchaseOrderForm({
         contractId,
         legalEntityId,
         lineItems,
+        customFieldValues,
       });
       if (result.error) {
         setError(result.error);
@@ -142,12 +156,14 @@ export function PurchaseOrderForm({
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label>Поставщик</Label>
-            <EntityCombobox
+            <ClientCombobox
+              orgSlug={orgSlug}
               options={supplierOptions}
               value={supplierId}
               onChange={setSupplierId}
               placeholder="Не выбран"
               emptyMessage="Контрагенты не найдены"
+              createLabel="поставщика"
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -193,8 +209,8 @@ export function PurchaseOrderForm({
             const subtotal = (Number(row.unitCost) || 0) * (Number(row.quantity) || 0);
 
             return (
-              <div key={row.key} className="flex items-end gap-2">
-                <div className="flex-1">
+              <div key={row.key} className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[200px] basis-full sm:basis-auto sm:flex-1">
                   <EntityCombobox
                     options={catalogItemComboOptions}
                     value={row.catalogItemId}
@@ -228,7 +244,7 @@ export function PurchaseOrderForm({
                   />
                 </div>
                 <div className="w-28 shrink-0 text-right text-sm text-muted-foreground">
-                  {item ? `${subtotal.toFixed(2)} ${item.currency}` : "—"}
+                  {item ? formatMoney(subtotal, item.currency) : "—"}
                 </div>
                 <Button
                   type="button"
@@ -253,7 +269,7 @@ export function PurchaseOrderForm({
           </Button>
 
           <div className="mt-2 flex justify-end text-base font-semibold">
-            Итого: {total.toFixed(2)} ₽
+            Итого: {formatMoney(total, totalCurrency)}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -264,6 +280,12 @@ export function PurchaseOrderForm({
           </Button>
         </CardFooter>
       </Card>
+
+      <CustomFieldsEditor
+        defs={customFieldDefs}
+        values={customFieldValues}
+        onChange={(id, value) => setCustomFieldValues((prev) => ({ ...prev, [id]: value }))}
+      />
     </div>
   );
 }

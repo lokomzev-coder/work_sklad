@@ -13,6 +13,34 @@ export interface ActionResult {
   error?: string;
 }
 
+export interface QuickCreateClientResult {
+  client?: { id: string; name: string };
+  error?: string;
+}
+
+/** Minimal client creation used by inline "+ create" pickers in Order/PurchaseOrder/
+ * Contract/Payment forms — unlike `createClient`, returns the created record instead
+ * of redirecting, so the caller can select it in-place without leaving the page. */
+export async function quickCreateClient(
+  orgSlug: string,
+  input: { name: string; phone?: string; email?: string },
+): Promise<QuickCreateClientResult> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx.role, "clients", "edit");
+
+  const parsed = clientSchema.pick({ name: true, phone: true, email: true }).safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
+  }
+
+  const client = await prisma.client.create({
+    data: { ...parsed.data, orgId: ctx.orgId },
+  });
+
+  revalidatePath(`/${orgSlug}/clients`);
+  return { client: { id: client.id, name: client.name } };
+}
+
 function parseClientForm(formData: FormData) {
   return clientSchema.safeParse({
     name: formData.get("name"),

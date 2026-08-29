@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { DocumentStatusKind } from "@/generated/prisma/enums";
+import type { DocumentStatusKind, Role } from "@/generated/prisma/enums";
 
 const DEFAULT_STATUSES: { name: string; color: string; isFinal: boolean }[] = [
   { name: "Черновик", color: "gray", isFinal: false },
@@ -55,4 +55,65 @@ export async function listDocumentStatuses(
 export async function getDefaultStatusId(orgId: string, kind: DocumentStatusKind): Promise<string> {
   const statuses = await listDocumentStatuses(orgId, kind);
   return statuses[0].id;
+}
+
+export interface DocumentStatusTransitionRow {
+  id: string;
+  fromStatusId: string;
+  toStatusId: string;
+  allowedRoles: Role[];
+}
+
+export async function listTransitions(
+  orgId: string,
+  kind: DocumentStatusKind,
+): Promise<DocumentStatusTransitionRow[]> {
+  return prisma.documentStatusTransition.findMany({
+    where: { fromStatus: { orgId, kind } },
+    select: { id: true, fromStatusId: true, toStatusId: true, allowedRoles: true },
+  });
+}
+
+/**
+ * Statuses `statusId` may move to for `role`, same kind only. A status with
+ * NO outgoing transition rows at all is unrestricted (every other status of
+ * the same kind is allowed) — this is the pre-existing behavior, so orgs
+ * that never configure transitions keep working exactly as before. The
+ * moment an org adds one transition FROM a status, that status becomes
+ * restricted to only its explicitly listed destinations.
+ */
+export async function getAllowedNextStatusIds(
+  orgId: string,
+  kind: DocumentStatusKind,
+  statusId: string,
+  role: Role,
+): Promise<Set<string>> {
+  const outgoing = await prisma.documentStatusTransition.findMany({
+    where: { fromStatusId: statusId },
+  });
+  if (outgoing.length === 0) {
+    const all = await listDocumentStatuses(orgId, kind);
+    return new Set(all.map((s) => s.id).filter((id) => id !== statusId));
+  }
+  return new Set(
+    outgoing
+      .filter((t) => t.allowedRoles.length === 0 || t.allowedRoles.includes(role))
+      .map((t) => t.toStatusId),
+  );
+}
+
+/** Statuses selectable in the status dropdown for a document currently at
+ * `currentStatusId` — its own status (so the select shows the current
+ * value) plus whatever getAllowedNextStatusIds allows for `role`. */
+export async function getSelectableStatuses(
+  orgId: string,
+  kind: DocumentStatusKind,
+  currentStatusId: string,
+  role: Role,
+): Promise<DocumentStatusOption[]> {
+  const [all, allowedIds] = await Promise.all([
+    listDocumentStatuses(orgId, kind),
+    getAllowedNextStatusIds(orgId, kind, currentStatusId, role),
+  ]);
+  return all.filter((s) => s.id === currentStatusId || allowedIds.has(s.id));
 }

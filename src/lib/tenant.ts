@@ -19,6 +19,8 @@ export interface OrgContext {
    * this Membership, else "ALL" (the base Role enum has no scope concept —
    * everyone with "orders" access sees every order). */
   orderScope: Scope;
+  /** Same idea as orderScope, but for PurchaseOrder.assignedEmployeeId. */
+  purchaseOrderScope: Scope;
 }
 
 export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
@@ -40,9 +42,11 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
     select: { employeeId: true, customRole: { select: { permissions: true } } },
   });
 
-  const orderScope = fullMembership?.customRole
-    ? parseCustomRolePermissions(fullMembership.customRole.permissions).orders?.scope ?? "ALL"
-    : "ALL";
+  const permissions = fullMembership?.customRole
+    ? parseCustomRolePermissions(fullMembership.customRole.permissions)
+    : {};
+  const orderScope = permissions.orders?.scope ?? "ALL";
+  const purchaseOrderScope = permissions.purchaseOrders?.scope ?? "ALL";
 
   return {
     orgId: membership.orgId,
@@ -52,5 +56,6 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
     userId: session.user.id,
     employeeId: fullMembership?.employeeId ?? null,
     orderScope,
+    purchaseOrderScope,
   };
 }

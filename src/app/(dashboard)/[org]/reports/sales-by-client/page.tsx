@@ -11,6 +11,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { ReportsSubnav } from "@/components/reports/reports-subnav";
+import { formatMoney } from "@/lib/format";
 
 export default async function SalesByClientReportPage({
   params,
@@ -55,11 +56,11 @@ export default async function SalesByClientReportPage({
                       {r.clientName}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right">{r.orderTotal.toFixed(2)} {baseCurrency}</TableCell>
-                  <TableCell className="text-right">{r.paymentsReceived.toFixed(2)} {baseCurrency}</TableCell>
+                  <TableCell className="text-right">{formatMoney(r.orderTotal, baseCurrency)}</TableCell>
+                  <TableCell className="text-right">{formatMoney(r.paymentsReceived, baseCurrency)}</TableCell>
                   <TableCell className="text-right">
                     <span className={r.receivable > 0 ? "text-destructive" : ""}>
-                      {r.receivable.toFixed(2)} {baseCurrency}
+                      {formatMoney(r.receivable, baseCurrency)}
                     </span>
                   </TableCell>
                 </TableRow>

@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 
+export { STOCK_MOVEMENT_TYPE_LABELS } from "@/lib/stock-labels";
+
 export interface StockBalanceRow {
   catalogItemId: string;
   catalogItemName: string;
@@ -65,4 +67,71 @@ export async function getItemBalanceAtStore(
 ): Promise<number> {
   const rows = await getStockBalances(orgId, { storeId, catalogItemId });
   return rows[0] ? Number(rows[0].quantity) : 0;
+}
+
+export interface BundleStockRow {
+  catalogItemId: string;
+  catalogItemName: string;
+  storeId: string;
+  storeName: string;
+  quantity: string;
+}
+
+/**
+ * BUNDLE items have no ledger of their own (ROADMAP Block B) — "how many can
+ * I assemble" is derived from component stock: at each store, it's the
+ * minimum across all components of floor(component balance / qty needed per
+ * bundle). Zero-quantity results are omitted, same convention as
+ * getStockBalances (a bundle you can't currently assemble anywhere isn't
+ * worth a zero row).
+ */
+export async function getBundleStockBalances(orgId: string): Promise<BundleStockRow[]> {
+  const bundles = await prisma.catalogItem.findMany({
+    where: { orgId, type: "BUNDLE", status: "ACTIVE" },
+    include: { bundleComponents: true },
+  });
+  if (bundles.length === 0) return [];
+
+  const componentIds = new Set(bundles.flatMap((b) => b.bundleComponents.map((c) => c.componentId)));
+  if (componentIds.size === 0) return [];
+
+  const [balances, stores] = await Promise.all([
+    getStockBalances(orgId),
+    prisma.store.findMany({ where: { orgId, status: "ACTIVE" } }),
+  ]);
+
+  const balanceByItemAndStore = new Map<string, Map<string, number>>();
+  for (const row of balances) {
+    if (!componentIds.has(row.catalogItemId)) continue;
+    let byStore = balanceByItemAndStore.get(row.catalogItemId);
+    if (!byStore) {
+      byStore = new Map();
+      balanceByItemAndStore.set(row.catalogItemId, byStore);
+    }
+    byStore.set(row.storeId, Number(row.quantity));
+  }
+
+  const result: BundleStockRow[] = [];
+  for (const bundle of bundles) {
+    if (bundle.bundleComponents.length === 0) continue;
+    for (const store of stores) {
+      let available = Infinity;
+      for (const component of bundle.bundleComponents) {
+        const componentBalance = balanceByItemAndStore.get(component.componentId)?.get(store.id) ?? 0;
+        const needed = Number(component.quantity);
+        const possible = needed > 0 ? Math.floor(componentBalance / needed) : 0;
+        available = Math.min(available, possible);
+      }
+      if (available > 0 && Number.isFinite(available)) {
+        result.push({
+          catalogItemId: bundle.id,
+          catalogItemName: bundle.name,
+          storeId: store.id,
+          storeName: store.name,
+          quantity: String(available),
+        });
+      }
+    }
+  }
+  return result;
 }

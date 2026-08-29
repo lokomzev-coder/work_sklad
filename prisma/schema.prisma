@@ -153,6 +153,7 @@ model Client {
   purchaseOrders PurchaseOrder[] @relation("Supplier")
   payments       Payment[]
   contacts       ClientContact[]
+  addresses      ClientAddress[]
   contracts      Contract[]
 
   @@index([orgId, status])
@@ -168,6 +169,20 @@ model ClientContact {
   position String?
   phone    String?
   email    String?
+
+  @@index([clientId])
+}
+
+// Multiple addresses per Client (D4 follow-up) — same reasoning as
+// ClientContact: a counterparty commonly has more than one address (legal,
+// warehouse, delivery...). `label` is a free-text tag (e.g. "Юридический"),
+// not an enum — orgs describe these differently.
+model ClientAddress {
+  id       String  @id @default(cuid())
+  clientId String
+  client   Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  label    String?
+  address  String
 
   @@index([clientId])
 }
@@ -466,13 +481,12 @@ model LegalEntity {
 }
 
 // C4: per-org configurable statuses, replacing the old hardcoded
-// OrderStatus/PurchaseOrderStatus enums. Deliberately NOT a full workflow
-// engine (no transition graph, no per-transition permissions) — just a
-// named, ordered, colored list per document kind, which is what actually
-// varies between businesses ("Ожидает оплаты", "В сборке", ...). Every org
-// gets 4 seeded defaults (lib/document-statuses.ts::ensureDefaultStatuses,
-// same lazy-backfill pattern as the vault DEK) mirroring the old enum, so
-// existing behavior is preserved unless the org customizes it.
+// OrderStatus/PurchaseOrderStatus enums — a named, ordered, colored list per
+// document kind, which is what actually varies between businesses ("Ожидает
+// оплаты", "В сборке", ...). Every org gets 4 seeded defaults
+// (lib/document-statuses.ts::ensureDefaultStatuses, same lazy-backfill
+// pattern as the vault DEK) mirroring the old enum, so existing behavior is
+// preserved unless the org customizes it.
 enum DocumentStatusKind {
   ORDER
   PURCHASE_ORDER
@@ -493,9 +507,33 @@ model DocumentStatus {
 
   orders         Order[]
   purchaseOrders PurchaseOrder[]
+  transitionsOut DocumentStatusTransition[] @relation("TransitionFrom")
+  transitionsIn  DocumentStatusTransition[] @relation("TransitionTo")
 
   @@unique([orgId, kind, name])
   @@index([orgId, kind, position])
+}
+
+// C4 follow-up: opt-in transition graph on top of DocumentStatus. A status
+// with ZERO outgoing rows here is unrestricted (can move to any other status
+// of the same kind) — this is the pre-existing/default behavior, so orgs
+// that never touch this stay exactly as before. The moment an org adds even
+// one transition row FROM a given status, that status becomes restricted:
+// only the explicitly listed destinations are allowed from then on. Empty
+// `allowedRoles` means "any role that already has orders:edit" (no further
+// restriction); a non-empty list narrows it to those roles specifically —
+// this is an ADDITIONAL check on top of, not a replacement for, the base
+// role/scope checks in actions/orders.ts and actions/purchase-orders.ts.
+model DocumentStatusTransition {
+  id           String         @id @default(cuid())
+  fromStatusId String
+  fromStatus   DocumentStatus @relation("TransitionFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatusId   String
+  toStatus     DocumentStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
+  allowedRoles Role[]         @default([])
+
+  @@unique([fromStatusId, toStatusId])
+  @@index([fromStatusId])
 }
 
 model Order {

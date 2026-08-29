@@ -6,7 +6,8 @@ import { OrderStatusSelect } from "@/components/orders/order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
 import { PrintButton } from "@/components/print/print-button";
 import { variantLabel } from "@/lib/catalog-variants";
-import { listDocumentStatuses } from "@/lib/document-statuses";
+import { getSelectableStatuses } from "@/lib/document-statuses";
+import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function EditOrderPage({
   params,
@@ -48,6 +49,8 @@ export default async function EditOrderPage({
     salesChannels,
     legalEntities,
     statusOptions,
+    customFieldDefs,
+    customFieldValues,
   ] = await Promise.all([
     prisma.client.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
@@ -75,7 +78,9 @@ export default async function EditOrderPage({
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    listDocumentStatuses(ctx.orgId, "ORDER"),
+    getSelectableStatuses(ctx.orgId, "ORDER", order.statusId, ctx.role),
+    listCustomFieldDefinitions(ctx.orgId, "ORDER"),
+    getCustomFieldValues(order.id),
   ]);
 
   // Archived entities stay out of the "pick something new" list, but an
@@ -160,6 +165,7 @@ export default async function EditOrderPage({
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
+        customFieldDefs={customFieldDefs}
         defaultValues={{
           clientId: order.clientId,
           assignedEmployeeId: order.assignedEmployeeId,
@@ -171,6 +177,7 @@ export default async function EditOrderPage({
             variantId: li.variantId,
             quantity: li.quantity.toString(),
           })),
+          customFieldValues,
         }}
       />
       <FulfillmentPanel

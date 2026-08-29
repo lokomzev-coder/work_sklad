@@ -1,5 +1,5 @@
 import { getOrgContext } from "@/lib/tenant";
-import { getStockBalances } from "@/lib/stock";
+import { getStockBalances, getBundleStockBalances } from "@/lib/stock";
 import {
   Table,
   TableHeader,
@@ -18,7 +18,10 @@ export default async function StockReportPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const rows = await getStockBalances(ctx.orgId);
+  const [rows, bundleRows] = await Promise.all([
+    getStockBalances(ctx.orgId),
+    getBundleStockBalances(ctx.orgId),
+  ]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -53,6 +56,36 @@ export default async function StockReportPage({
           </TableBody>
         </Table>
       </div>
+
+      {bundleRows.length > 0 && (
+        <>
+          <h2 className="text-lg font-medium">Комплекты (доступно к сборке)</h2>
+          <p className="text-sm text-muted-foreground">
+            Не отдельный складской леджер — считается на лету из остатков компонентов
+            (сколько комплектов можно собрать прямо сейчас).
+          </p>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Склад</TableHead>
+                  <TableHead>Комплект</TableHead>
+                  <TableHead className="text-right">Можно собрать</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bundleRows.map((row) => (
+                  <TableRow key={`${row.storeId}-${row.catalogItemId}`}>
+                    <TableCell>{row.storeName}</TableCell>
+                    <TableCell>{row.catalogItemName}</TableCell>
+                    <TableCell className="text-right">{row.quantity}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
     </div>
   );
 }

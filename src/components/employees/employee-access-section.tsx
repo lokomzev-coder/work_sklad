@@ -102,20 +102,20 @@ function GrantAccessForm({
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="login">Логин</Label>
-              <Input id="login" name="login" placeholder="ivan" required />
+              <Label htmlFor="access-login">Логин</Label>
+              <Input id="access-login" name="login" placeholder="ivan" required />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" required />
+              <Label htmlFor="access-email">Email</Label>
+              <Input id="access-email" name="email" type="email" required />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password">Пароль (для нового пользователя)</Label>
-              <Input id="password" name="password" type="password" />
+              <Label htmlFor="access-password">Пароль (для нового пользователя)</Label>
+              <Input id="access-password" name="password" type="password" />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="role">Базовая роль</Label>
-              <select id="role" name="role" defaultValue="EMPLOYEE" className="h-9 rounded-md border bg-background px-3 text-sm">
+              <Label htmlFor="access-role">Базовая роль</Label>
+              <select id="access-role" name="role" defaultValue="EMPLOYEE" className="h-9 rounded-md border bg-background px-3 text-sm">
                 <option value="ADMIN">Администратор</option>
                 <option value="MANAGER">Менеджер</option>
                 <option value="EMPLOYEE">Сотрудник</option>
@@ -123,9 +123,9 @@ function GrantAccessForm({
             </div>
             {customRoleOptions.length > 0 && (
               <div className="flex flex-col gap-2 sm:col-span-2">
-                <Label htmlFor="customRoleId">Пользовательская роль (видимость заказов)</Label>
+                <Label htmlFor="access-customRoleId">Пользовательская роль (видимость заказов)</Label>
                 <select
-                  id="customRoleId"
+                  id="access-customRoleId"
                   name="customRoleId"
                   defaultValue=""
                   className="h-9 rounded-md border bg-background px-3 text-sm"

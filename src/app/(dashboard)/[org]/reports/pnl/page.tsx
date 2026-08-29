@@ -3,6 +3,7 @@ import { getPnlReport } from "@/lib/reports";
 import { Card, CardContent } from "@/components/ui/card";
 import { ReportsSubnav } from "@/components/reports/reports-subnav";
 import { PeriodFilter } from "@/components/reports/period-filter";
+import { formatMoney } from "@/lib/format";
 
 export default async function PnlReportPage({
   params,
@@ -35,13 +36,13 @@ export default async function PnlReportPage({
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Выручка</div>
-            <div className="text-xl font-semibold">{report.revenue.toFixed(2)} {report.baseCurrency}</div>
+            <div className="text-xl font-semibold">{formatMoney(report.revenue, report.baseCurrency)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
             <div className="text-sm text-muted-foreground">Себестоимость</div>
-            <div className="text-xl font-semibold">{report.costOfGoods.toFixed(2)} {report.baseCurrency}</div>
+            <div className="text-xl font-semibold">{formatMoney(report.costOfGoods, report.baseCurrency)}</div>
           </CardContent>
         </Card>
         <Card>
@@ -50,7 +51,7 @@ export default async function PnlReportPage({
             <div
               className={`text-xl font-semibold ${report.grossMargin < 0 ? "text-destructive" : ""}`}
             >
-              {report.grossMargin.toFixed(2)} {report.baseCurrency}
+              {formatMoney(report.grossMargin, report.baseCurrency)}
             </div>
           </CardContent>
         </Card>

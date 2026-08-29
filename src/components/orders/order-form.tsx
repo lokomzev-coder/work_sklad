@@ -7,7 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
+import { ClientCombobox } from "@/components/forms/client-combobox";
+import { CustomFieldsEditor } from "@/components/settings/custom-fields-editor";
 import { upsertOrder } from "@/actions/orders";
+import type { CustomFieldDef } from "@/lib/custom-fields";
+import { formatMoney } from "@/lib/format";
 
 interface VariantOption {
   id: string;
@@ -39,6 +43,7 @@ interface OrderFormProps {
   contractOptions: ComboboxOption[];
   salesChannelOptions: ComboboxOption[];
   legalEntityOptions: ComboboxOption[];
+  customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
     clientId: string | null;
     assignedEmployeeId: string | null;
@@ -46,6 +51,7 @@ interface OrderFormProps {
     salesChannelId: string | null;
     legalEntityId: string | null;
     lineItems: { catalogItemId: string; variantId: string | null; quantity: string }[];
+    customFieldValues?: Record<string, string>;
   };
 }
 
@@ -62,6 +68,7 @@ export function OrderForm({
   contractOptions,
   salesChannelOptions,
   legalEntityOptions,
+  customFieldDefs = [],
   defaultValues,
 }: OrderFormProps) {
   const router = useRouter();
@@ -81,6 +88,9 @@ export function OrderForm({
   );
   const [legalEntityId, setLegalEntityId] = useState<string | null>(
     defaultValues?.legalEntityId ?? null,
+  );
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(
+    defaultValues?.customFieldValues ?? {},
   );
   const [rows, setRows] = useState<LineItemRow[]>(() =>
     defaultValues?.lineItems.length
@@ -115,6 +125,9 @@ export function OrderForm({
     const qty = Number(row.quantity) || 0;
     return sum + lineUnitPrice(row, item) * qty;
   }, 0);
+  const totalCurrency =
+    rows.map((row) => (row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined)).find(Boolean)
+      ?.currency ?? "RUB";
 
   function updateRow(key: string, patch: Partial<LineItemRow>) {
     setRows((prev) =>
@@ -154,6 +167,7 @@ export function OrderForm({
         salesChannelId,
         legalEntityId,
         lineItems,
+        customFieldValues,
       });
       if (result.error) {
         setError(result.error);
@@ -172,12 +186,14 @@ export function OrderForm({
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-2">
             <Label>Клиент</Label>
-            <EntityCombobox
+            <ClientCombobox
+              orgSlug={orgSlug}
               options={clientOptions}
               value={clientId}
               onChange={setClientId}
               placeholder="Не выбран"
               emptyMessage="Клиенты не найдены"
+              createLabel="клиента"
             />
           </div>
           <div className="flex flex-col gap-2">
@@ -237,8 +253,8 @@ export function OrderForm({
 
             return (
               <div key={row.key} className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0">
-                <div className="flex items-end gap-2">
-                  <div className="flex-1">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[200px] basis-full sm:basis-auto sm:flex-1">
                     <EntityCombobox
                       options={catalogItemComboOptions}
                       value={row.catalogItemId}
@@ -257,7 +273,7 @@ export function OrderForm({
                     />
                   </div>
                   <div className="w-28 shrink-0 text-right text-sm text-muted-foreground">
-                    {item ? `${subtotal.toFixed(2)} ${item.currency}` : "—"}
+                    {item ? formatMoney(subtotal, item.currency) : "—"}
                   </div>
                   <Button
                     type="button"
@@ -270,7 +286,7 @@ export function OrderForm({
                   </Button>
                 </div>
                 {variantOptions.length > 0 && (
-                  <div className="w-64">
+                  <div className="w-full sm:w-64">
                     <EntityCombobox
                       options={variantOptions}
                       value={row.variantId}
@@ -294,7 +310,7 @@ export function OrderForm({
           </Button>
 
           <div className="mt-2 flex justify-end text-base font-semibold">
-            Итого: {total.toFixed(2)} ₽
+            Итого: {formatMoney(total, totalCurrency)}
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
@@ -305,6 +321,12 @@ export function OrderForm({
           </Button>
         </CardFooter>
       </Card>
+
+      <CustomFieldsEditor
+        defs={customFieldDefs}
+        values={customFieldValues}
+        onChange={(id, value) => setCustomFieldValues((prev) => ({ ...prev, [id]: value }))}
+      />
     </div>
   );
 }

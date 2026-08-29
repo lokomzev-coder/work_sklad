@@ -14,7 +14,7 @@ const TABS = [
 
 export function WarehouseSubnav({ org, active }: WarehouseSubnavProps) {
   return (
-    <div className="flex gap-1 border-b">
+    <div className="flex flex-wrap gap-1 border-b">
       {TABS.map((tab) => (
         <Link
           key={tab.key}
