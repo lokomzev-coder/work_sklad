@@ -11,4 +11,6 @@ export const STOCK_MOVEMENT_TYPE_LABELS: Record<string, string> = {
   SUPPLY: "Приёмка",
   SALES_RETURN: "Возврат от клиента",
   PURCHASE_RETURN: "Возврат поставщику",
+  PRODUCTION_CONSUME: "Расход в производство",
+  PRODUCTION_OUTPUT: "Выпуск продукции",
 };

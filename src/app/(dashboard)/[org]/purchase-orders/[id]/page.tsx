@@ -55,7 +55,11 @@ export default async function EditPurchaseOrderPage({
     prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    getSelectableStatuses(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, ctx.role),
+    getSelectableStatuses(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, {
+      role: ctx.role,
+      customRoleId: ctx.customRoleId,
+      employeeId: ctx.employeeId,
+    }),
     listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
     getCustomFieldValues(purchaseOrder.id),
   ]);

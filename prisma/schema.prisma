@@ -66,6 +66,8 @@ model Organization {
   exchangeRates          ExchangeRate[]
   webhooks               Webhook[]
   customRoles            CustomRole[]
+  techCards              TechCard[]
+  productionOrders       ProductionOrder[]
 }
 
 model Membership {
@@ -119,12 +121,13 @@ model Employee {
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
 
-  ordersAssigned         Order[]               @relation("AssignedEmployee")
-  purchaseOrdersAssigned PurchaseOrder[]       @relation("AssignedEmployeePO")
-  vaultAccess            EmployeeVaultAccess[]
+  ordersAssigned           Order[]               @relation("AssignedEmployee")
+  purchaseOrdersAssigned   PurchaseOrder[]       @relation("AssignedEmployeePO")
+  productionOrdersAssigned ProductionOrder[]     @relation("AssignedEmployeeProduction")
+  vaultAccess              EmployeeVaultAccess[]
   // Opposite side of Membership.employeeId — set only if this employee has
   // been granted a personal login (Block I self-service).
-  membership             Membership?
+  membership               Membership?
 
   @@index([orgId, status])
 }
@@ -285,6 +288,8 @@ model CatalogItem {
   partOfBundles          CatalogItemComponent[] @relation("ComponentOfBundles")
   stockMovementLines     StockMovementLine[]
   variants               CatalogItemVariant[]
+  techCardOutputs        TechCard[]              @relation("TechCardOutput")
+  techCardComponentOf    TechCardComponent[]     @relation("TechCardComponentItem")
 
   @@index([orgId, status])
   @@index([orgId, groupId])
@@ -374,6 +379,7 @@ model Store {
 
   movementsAsSource      StockMovement[] @relation("SourceStore")
   movementsAsDestination StockMovement[] @relation("DestinationStore")
+  productionOrders       ProductionOrder[]
 
   @@index([orgId, status])
 }
@@ -384,10 +390,14 @@ model Store {
 // SALES_RETURN/PURCHASE_RETURN are their mirror images: a client returning
 // goods behaves like ENTER (capped by how much was actually demanded and not
 // yet returned), a return to a supplier behaves like LOSS (capped by how
-// much was actually supplied and not yet returned). Routing all of this
-// through one ledger (rather than separate mechanisms) means lib/stock.ts
-// never needs to know about Orders/PurchaseOrders at all — it only ever
-// reasons about the CASE below.
+// much was actually supplied and not yet returned). PRODUCTION_CONSUME/
+// PRODUCTION_OUTPUT (Block F) are the same idea for a ProductionOrder: raw
+// materials are consumed like LOSS, the finished good is produced like
+// ENTER — posted together, atomically, by actions/production-orders.ts::
+// completeProductionOrder. Routing all of this through one ledger (rather
+// than separate mechanisms) means lib/stock.ts never needs to know about
+// Orders/PurchaseOrders/ProductionOrders at all — it only ever reasons about
+// the CASE below.
 enum StockMovementType {
   ENTER
   LOSS
@@ -397,6 +407,8 @@ enum StockMovementType {
   SUPPLY
   SALES_RETURN
   PURCHASE_RETURN
+  PRODUCTION_CONSUME
+  PRODUCTION_OUTPUT
 }
 
 // Movements are immutable once created — a mistake is corrected with another
@@ -414,13 +426,15 @@ model StockMovement {
   toStore         Store?            @relation("DestinationStore", fields: [toStoreId], references: [id], onDelete: Restrict)
   comment         String?
   createdAt       DateTime          @default(now())
-  // Only set for type = DEMAND / SUPPLY respectively — the document this
-  // movement fulfils, for traceability ("which shipments came out of this
-  // order?").
+  // Only set for type = DEMAND / SUPPLY / PRODUCTION_CONSUME|OUTPUT
+  // respectively — the document this movement fulfils, for traceability
+  // ("which shipments came out of this order?").
   orderId         String?
   order           Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  productionOrderId String?
+  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
 
   lines StockMovementLine[]
 
@@ -428,6 +442,7 @@ model StockMovement {
   @@index([orgId, type])
   @@index([orderId])
   @@index([purchaseOrderId])
+  @@index([productionOrderId])
 }
 
 model StockMovementLine {
@@ -490,6 +505,7 @@ model LegalEntity {
 enum DocumentStatusKind {
   ORDER
   PURCHASE_ORDER
+  PRODUCTION_ORDER
 }
 
 model DocumentStatus {
@@ -505,10 +521,11 @@ model DocumentStatus {
   isFinal   Boolean            @default(false)
   createdAt DateTime           @default(now())
 
-  orders         Order[]
-  purchaseOrders PurchaseOrder[]
-  transitionsOut DocumentStatusTransition[] @relation("TransitionFrom")
-  transitionsIn  DocumentStatusTransition[] @relation("TransitionTo")
+  orders           Order[]
+  purchaseOrders   PurchaseOrder[]
+  productionOrders ProductionOrder[]
+  transitionsOut   DocumentStatusTransition[] @relation("TransitionFrom")
+  transitionsIn    DocumentStatusTransition[] @relation("TransitionTo")
 
   @@unique([orgId, kind, name])
   @@index([orgId, kind, position])
@@ -531,9 +548,88 @@ model DocumentStatusTransition {
   toStatusId   String
   toStatus     DocumentStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
   allowedRoles Role[]         @default([])
+  // Same "who can" idea as allowedRoles, but at CustomRole/Employee
+  // granularity (МойСклад studied 2026-08-29: their business-process editor
+  // lets you name individual employees or roles for a transition, not just
+  // the base role). All three arrays are OR'd together: empty across all
+  // three means unrestricted (same as before); any non-empty array narrows
+  // to a union of what it lists. IDs aren't FK-constrained here (an org can
+  // delete a CustomRole/Employee later) — stale IDs just stop matching
+  // anyone, same failure mode as a since-deleted role would have anyway.
+  allowedCustomRoleIds String[] @default([])
+  allowedEmployeeIds   String[] @default([])
 
   @@unique([fromStatusId, toStatusId])
   @@index([fromStatusId])
+}
+
+// --- Production (Block F) -----------------------------------------------
+// A TechCard is a bill-of-materials: it names a finished PRODUCT
+// (outputItem, produced in batches of outputQuantity) and the raw-material
+// PRODUCTs consumed to make one batch. Deliberately reuses the same
+// PRODUCT-only restriction as fulfillment.ts (services/bundles don't carry
+// real stock) and the same "delete+recreate on every save" component-list
+// pattern as CatalogItemComponent/actions/catalog-bundles.ts — this is not
+// a sales kit (nothing here is virtual/assembled-on-demand), it's a real
+// atomic stock conversion posted by ProductionOrder.
+model TechCard {
+  id             String       @id @default(cuid())
+  orgId          String
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name           String
+  outputItemId   String
+  outputItem     CatalogItem  @relation("TechCardOutput", fields: [outputItemId], references: [id], onDelete: Restrict)
+  outputQuantity Decimal      @db.Decimal(12, 3)
+  status         EntityStatus @default(ACTIVE)
+  archivedAt     DateTime?
+  createdAt      DateTime     @default(now())
+
+  components       TechCardComponent[]
+  productionOrders ProductionOrder[]
+
+  @@index([orgId, status])
+}
+
+model TechCardComponent {
+  id            String      @id @default(cuid())
+  techCardId    String
+  techCard      TechCard    @relation(fields: [techCardId], references: [id], onDelete: Cascade)
+  catalogItemId String
+  catalogItem   CatalogItem @relation("TechCardComponentItem", fields: [catalogItemId], references: [id], onDelete: Restrict)
+  // Quantity needed per one outputQuantity batch of the parent TechCard —
+  // actual consumption on a ProductionOrder scales this by
+  // (order.quantity / techCard.outputQuantity).
+  quantity      Decimal     @db.Decimal(12, 3)
+
+  @@unique([techCardId, catalogItemId])
+}
+
+// A production run: "make `quantity` units of techCard.outputItem". Status
+// is a normal DocumentStatus workflow (Block C4/K, purely descriptive), kept
+// deliberately independent of stock — the actual atomic consume+produce
+// ledger posting happens once, via completeProductionOrder, guarded by
+// completedAt so it can never double-post.
+model ProductionOrder {
+  id                 String         @id @default(cuid())
+  orgId              String
+  org                Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number             Int
+  techCardId         String
+  techCard           TechCard       @relation(fields: [techCardId], references: [id], onDelete: Restrict)
+  storeId            String
+  store              Store          @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  quantity           Decimal        @db.Decimal(12, 3)
+  assignedEmployeeId String?
+  assignedEmployee   Employee?      @relation("AssignedEmployeeProduction", fields: [assignedEmployeeId], references: [id])
+  statusId           String
+  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  completedAt        DateTime?
+  createdAt          DateTime       @default(now())
+
+  stockMovements StockMovement[]
+
+  @@unique([orgId, number])
+  @@index([orgId, statusId])
 }
 
 model Order {

@@ -13,11 +13,12 @@ export interface StockBalanceRow {
 
 /**
  * Stock is never a stored, mutable number — it's always derived from the
- * StockMovementLine ledger: ENTER/INVENTORY/SUPPLY/SALES_RETURN lines add
- * `quantity` to storeId, LOSS/MOVE/DEMAND/PURCHASE_RETURN subtract it from
- * storeId, and MOVE additionally adds it to toStoreId. Computing it on the
- * fly means it can never drift from its own history (see the schema comment
- * above the Store model).
+ * StockMovementLine ledger: ENTER/INVENTORY/SUPPLY/SALES_RETURN/
+ * PRODUCTION_OUTPUT lines add `quantity` to storeId, LOSS/MOVE/DEMAND/
+ * PURCHASE_RETURN/PRODUCTION_CONSUME subtract it from storeId, and MOVE
+ * additionally adds it to toStoreId. Computing it on the fly means it can
+ * never drift from its own history (see the schema comment above the Store
+ * model).
  */
 export async function getStockBalances(
   orgId: string,
@@ -33,7 +34,7 @@ export async function getStockBalances(
   const rows = await prisma.$queryRaw<StockBalanceRow[]>(Prisma.sql`
     WITH deltas AS (
       SELECT sm."storeId" AS "storeId", l."catalogItemId" AS "catalogItemId",
-        CASE WHEN sm.type IN ('ENTER', 'INVENTORY', 'SUPPLY', 'SALES_RETURN') THEN l.quantity ELSE -l.quantity END AS delta
+        CASE WHEN sm.type IN ('ENTER', 'INVENTORY', 'SUPPLY', 'SALES_RETURN', 'PRODUCTION_OUTPUT') THEN l.quantity ELSE -l.quantity END AS delta
       FROM "StockMovementLine" l
       JOIN "StockMovement" sm ON sm.id = l."movementId"
       WHERE sm."orgId" = ${orgId}

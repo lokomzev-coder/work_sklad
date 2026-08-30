@@ -17,6 +17,8 @@ export async function createStatusTransition(
   fromStatusId: string,
   toStatusId: string,
   allowedRoles: string[],
+  allowedCustomRoleIds: string[] = [],
+  allowedEmployeeIds: string[] = [],
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx.role, "settings", "edit");
@@ -33,17 +35,32 @@ export async function createStatusTransition(
     return { error: "Некорректные роли" };
   }
 
-  const [fromStatus, toStatus] = await Promise.all([
+  const [fromStatus, toStatus, customRoleCount, employeeCount] = await Promise.all([
     prisma.documentStatus.findFirst({ where: { id: fromStatusId, orgId: ctx.orgId } }),
     prisma.documentStatus.findFirst({ where: { id: toStatusId, orgId: ctx.orgId } }),
+    allowedCustomRoleIds.length > 0
+      ? prisma.customRole.count({ where: { id: { in: allowedCustomRoleIds }, orgId: ctx.orgId } })
+      : 0,
+    allowedEmployeeIds.length > 0
+      ? prisma.employee.count({ where: { id: { in: allowedEmployeeIds }, orgId: ctx.orgId } })
+      : 0,
   ]);
   if (!fromStatus || !toStatus || fromStatus.kind !== toStatus.kind) {
     return { error: "Статус не найден" };
   }
+  if (customRoleCount !== allowedCustomRoleIds.length || employeeCount !== allowedEmployeeIds.length) {
+    return { error: "Роль или сотрудник не найдены" };
+  }
 
   try {
     await prisma.documentStatusTransition.create({
-      data: { fromStatusId, toStatusId, allowedRoles: parsedRoles.data },
+      data: {
+        fromStatusId,
+        toStatusId,
+        allowedRoles: parsedRoles.data,
+        allowedCustomRoleIds,
+        allowedEmployeeIds,
+      },
     });
   } catch {
     return { error: "Такой переход уже добавлен" };

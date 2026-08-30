@@ -10,7 +10,8 @@ export type Resource =
   | "orders"
   | "membership"
   | "warehouse"
-  | "settings";
+  | "settings"
+  | "production";
 
 /** ALL sees every document regardless of who's assigned; OWN sees only its
  * own (Block I) — only meaningful for "orders" right now (assignedEmployeeId
@@ -29,6 +30,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     membership: "full",
     warehouse: "full",
     settings: "full",
+    production: "full",
   },
   MANAGER: {
     vault: "full",
@@ -39,6 +41,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     membership: "read",
     warehouse: "full",
     settings: "read",
+    production: "full",
   },
   EMPLOYEE: {
     vault: "none",
@@ -49,6 +52,7 @@ const CAPABILITIES: Record<Role, Record<Resource, Access>> = {
     membership: "none",
     warehouse: "read",
     settings: "none",
+    production: "read",
   },
 };
 

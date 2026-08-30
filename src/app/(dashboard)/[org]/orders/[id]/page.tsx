@@ -78,7 +78,11 @@ export default async function EditOrderPage({
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    getSelectableStatuses(ctx.orgId, "ORDER", order.statusId, ctx.role),
+    getSelectableStatuses(ctx.orgId, "ORDER", order.statusId, {
+      role: ctx.role,
+      customRoleId: ctx.customRoleId,
+      employeeId: ctx.employeeId,
+    }),
     listCustomFieldDefinitions(ctx.orgId, "ORDER"),
     getCustomFieldValues(order.id),
   ]);

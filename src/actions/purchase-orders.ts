@@ -194,7 +194,11 @@ export async function updatePurchaseOrderStatus(
   }
 
   if (statusId !== purchaseOrder.statusId) {
-    const allowed = await getAllowedNextStatusIds(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, ctx.role);
+    const allowed = await getAllowedNextStatusIds(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, {
+      role: ctx.role,
+      customRoleId: ctx.customRoleId,
+      employeeId: ctx.employeeId,
+    });
     if (!allowed.has(statusId)) {
       throw new Error("Такой переход между статусами запрещён");
     }

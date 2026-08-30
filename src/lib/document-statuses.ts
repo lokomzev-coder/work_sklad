@@ -62,6 +62,8 @@ export interface DocumentStatusTransitionRow {
   fromStatusId: string;
   toStatusId: string;
   allowedRoles: Role[];
+  allowedCustomRoleIds: string[];
+  allowedEmployeeIds: string[];
 }
 
 export async function listTransitions(
@@ -70,12 +72,27 @@ export async function listTransitions(
 ): Promise<DocumentStatusTransitionRow[]> {
   return prisma.documentStatusTransition.findMany({
     where: { fromStatus: { orgId, kind } },
-    select: { id: true, fromStatusId: true, toStatusId: true, allowedRoles: true },
+    select: {
+      id: true,
+      fromStatusId: true,
+      toStatusId: true,
+      allowedRoles: true,
+      allowedCustomRoleIds: true,
+      allowedEmployeeIds: true,
+    },
   });
 }
 
+/** "Who am I" for the three OR'd who-can-transition axes — see
+ * DocumentStatusTransition.allowedCustomRoleIds in the schema. */
+export interface TransitionActor {
+  role: Role;
+  customRoleId: string | null;
+  employeeId: string | null;
+}
+
 /**
- * Statuses `statusId` may move to for `role`, same kind only. A status with
+ * Statuses `statusId` may move to for `actor`, same kind only. A status with
  * NO outgoing transition rows at all is unrestricted (every other status of
  * the same kind is allowed) — this is the pre-existing behavior, so orgs
  * that never configure transitions keep working exactly as before. The
@@ -86,7 +103,7 @@ export async function getAllowedNextStatusIds(
   orgId: string,
   kind: DocumentStatusKind,
   statusId: string,
-  role: Role,
+  actor: TransitionActor,
 ): Promise<Set<string>> {
   const outgoing = await prisma.documentStatusTransition.findMany({
     where: { fromStatusId: statusId },
@@ -97,23 +114,36 @@ export async function getAllowedNextStatusIds(
   }
   return new Set(
     outgoing
-      .filter((t) => t.allowedRoles.length === 0 || t.allowedRoles.includes(role))
+      .filter((t) => {
+        if (
+          t.allowedRoles.length === 0 &&
+          t.allowedCustomRoleIds.length === 0 &&
+          t.allowedEmployeeIds.length === 0
+        ) {
+          return true;
+        }
+        return (
+          t.allowedRoles.includes(actor.role) ||
+          (actor.customRoleId !== null && t.allowedCustomRoleIds.includes(actor.customRoleId)) ||
+          (actor.employeeId !== null && t.allowedEmployeeIds.includes(actor.employeeId))
+        );
+      })
       .map((t) => t.toStatusId),
   );
 }
 
 /** Statuses selectable in the status dropdown for a document currently at
  * `currentStatusId` — its own status (so the select shows the current
- * value) plus whatever getAllowedNextStatusIds allows for `role`. */
+ * value) plus whatever getAllowedNextStatusIds allows for `actor`. */
 export async function getSelectableStatuses(
   orgId: string,
   kind: DocumentStatusKind,
   currentStatusId: string,
-  role: Role,
+  actor: TransitionActor,
 ): Promise<DocumentStatusOption[]> {
   const [all, allowedIds] = await Promise.all([
     listDocumentStatuses(orgId, kind),
-    getAllowedNextStatusIds(orgId, kind, currentStatusId, role),
+    getAllowedNextStatusIds(orgId, kind, currentStatusId, actor),
   ]);
   return all.filter((s) => s.id === currentStatusId || allowedIds.has(s.id));
 }

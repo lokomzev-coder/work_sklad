@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { listDocumentStatuses, listTransitions } from "@/lib/document-statuses";
@@ -15,12 +16,23 @@ export default async function DocumentStatusesPage({
   const ctx = await getOrgContext(org);
   if (!can(ctx.role, "settings", "read")) notFound();
 
-  const [orderStatuses, purchaseOrderStatuses, orderTransitions, purchaseOrderTransitions] = await Promise.all([
+  const [
+    orderStatuses,
+    purchaseOrderStatuses,
+    orderTransitions,
+    purchaseOrderTransitions,
+    customRoles,
+    employees,
+  ] = await Promise.all([
     listDocumentStatuses(ctx.orgId, "ORDER"),
     listDocumentStatuses(ctx.orgId, "PURCHASE_ORDER"),
     listTransitions(ctx.orgId, "ORDER"),
     listTransitions(ctx.orgId, "PURCHASE_ORDER"),
+    prisma.customRole.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
   ]);
+  const customRoleOptions = customRoles.map((r) => ({ id: r.id, name: r.name }));
+  const employeeOptions = employees.map((e) => ({ id: e.id, name: e.fullName }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,6 +69,8 @@ export default async function DocumentStatusesPage({
           kind="ORDER"
           statuses={orderStatuses}
           transitions={orderTransitions}
+          customRoles={customRoleOptions}
+          employees={employeeOptions}
         />
       </div>
 
@@ -67,6 +81,8 @@ export default async function DocumentStatusesPage({
           kind="PURCHASE_ORDER"
           statuses={purchaseOrderStatuses}
           transitions={purchaseOrderTransitions}
+          customRoles={customRoleOptions}
+          employees={employeeOptions}
         />
       </div>
     </div>

@@ -15,6 +15,10 @@ export interface OrgContext {
    * self-service) — null for the common case of a login with no matching
    * employee row. */
   employeeId: string | null;
+  /** Set only if this Membership has a CustomRole assigned — used both for
+   * order/purchaseOrder scope (below) and as one of the three who-can-
+   * transition axes on DocumentStatusTransition (Block K). */
+  customRoleId: string | null;
   /** Resolved from CustomRole.permissions when a custom role is assigned to
    * this Membership, else "ALL" (the base Role enum has no scope concept —
    * everyone with "orders" access sees every order). */
@@ -39,7 +43,7 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
   // after the affected user's session token refreshes.
   const fullMembership = await prisma.membership.findFirst({
     where: { userId: session.user.id, orgId: membership.orgId },
-    select: { employeeId: true, customRole: { select: { permissions: true } } },
+    select: { employeeId: true, customRole: { select: { id: true, permissions: true } } },
   });
 
   const permissions = fullMembership?.customRole
@@ -55,6 +59,7 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
     role: membership.role,
     userId: session.user.id,
     employeeId: fullMembership?.employeeId ?? null,
+    customRoleId: fullMembership?.customRole?.id ?? null,
     orderScope,
     purchaseOrderScope,
   };
