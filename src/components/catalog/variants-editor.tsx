@@ -92,8 +92,8 @@ export function VariantsEditor({
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Сначала добавьте хотя бы одну характеристику (например, "Размер") на вкладке
-            "Характеристики" в каталоге.
+            Сначала добавьте хотя бы одну характеристику (например, «Размер») на вкладке
+            «Характеристики» в каталоге.
           </p>
         </CardContent>
       </Card>

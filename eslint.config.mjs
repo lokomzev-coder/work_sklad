@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // AI-agent tooling, not part of the product (see AI_ARTIFACTS.md).
+    ".claude/**",
+    ".claude-flow/**",
+    ".swarm/**",
+    ".agents/**",
+    ".windsurf/**",
+    ".playwright-mcp/**",
+    ".playwright-cli/**",
   ]),
 ]);
 

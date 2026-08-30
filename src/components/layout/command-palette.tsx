@@ -50,21 +50,19 @@ export function CommandPalette({ orgSlug }: CommandPaletteProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  const trimmedQuery = query.trim();
+  const displayedResults = trimmedQuery.length === 0 ? EMPTY_RESULTS : results;
+
   useEffect(() => {
-    if (!open) return;
-    const trimmed = query.trim();
-    if (trimmed.length === 0) {
-      setResults(EMPTY_RESULTS);
-      return;
-    }
+    if (!open || trimmedQuery.length === 0) return;
     const timeout = setTimeout(() => {
       startTransition(async () => {
-        const data = await searchOrg(orgSlug, trimmed);
+        const data = await searchOrg(orgSlug, trimmedQuery);
         setResults(data);
       });
     }, 200);
     return () => clearTimeout(timeout);
-  }, [query, open, orgSlug]);
+  }, [trimmedQuery, open, orgSlug]);
 
   const navigate = useCallback(
     (href: string) => {
@@ -75,7 +73,7 @@ export function CommandPalette({ orgSlug }: CommandPaletteProps) {
     [router],
   );
 
-  const hasResults = GROUPS.some((g) => results[g.key].length > 0);
+  const hasResults = GROUPS.some((g) => displayedResults[g.key].length > 0);
 
   return (
     <>
@@ -111,9 +109,9 @@ export function CommandPalette({ orgSlug }: CommandPaletteProps) {
           <CommandEmpty>Ничего не найдено</CommandEmpty>
         ) : (
           GROUPS.map(({ key, heading }) =>
-            results[key].length === 0 ? null : (
+            displayedResults[key].length === 0 ? null : (
               <CommandGroup key={key} heading={heading}>
-                {results[key].map((item) => (
+                {displayedResults[key].map((item) => (
                   <CommandItem
                     key={item.id}
                     value={`${key}-${item.id}-${item.label}`}

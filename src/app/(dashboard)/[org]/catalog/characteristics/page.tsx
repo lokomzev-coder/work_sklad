@@ -53,7 +53,7 @@ export default async function CharacteristicsPage({
             {characteristics.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={canEdit ? 2 : 1} className="text-center text-muted-foreground">
-                  Характеристики ещё не добавлены (например, "Размер", "Цвет")
+                  Характеристики ещё не добавлены (например, «Размер», «Цвет»)
                 </TableCell>
               </TableRow>
             ) : (

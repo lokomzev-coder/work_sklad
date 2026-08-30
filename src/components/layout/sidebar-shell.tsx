@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -29,6 +29,31 @@ import type { OrgMembership } from "@/types/next-auth";
 import type { Role } from "@/generated/prisma/enums";
 
 const STORAGE_KEY = "ew-sidebar-collapsed";
+
+// Sidebar collapsed state lives in localStorage, read through
+// useSyncExternalStore rather than useState+useEffect: the server snapshot
+// (false) matches the pre-hydration client render, so there's no
+// setState-after-mount flash to guard against, and no lint-flagged
+// synchronous setState inside an effect.
+const collapsedListeners = new Set<() => void>();
+
+function subscribeCollapsed(listener: () => void) {
+  collapsedListeners.add(listener);
+  return () => collapsedListeners.delete(listener);
+}
+
+function getCollapsedSnapshot() {
+  return window.localStorage.getItem(STORAGE_KEY) === "1";
+}
+
+function getCollapsedServerSnapshot() {
+  return false;
+}
+
+function setCollapsedStorage(next: boolean) {
+  window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+  collapsedListeners.forEach((listener) => listener());
+}
 
 // Icon components can't cross the server→client prop boundary (they're
 // forwardRef objects, not plain data), so the nav list — icons included —
@@ -103,14 +128,8 @@ interface SidebarShellProps {
 
 export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
   const { open, setOpen } = useMobileSidebar();
-  const [collapsed, setCollapsed] = useState(false);
-  const [mounted, setMounted] = useState(false);
+  const collapsed = useSyncExternalStore(subscribeCollapsed, getCollapsedSnapshot, getCollapsedServerSnapshot);
   const pathname = usePathname();
-
-  useEffect(() => {
-    setMounted(true);
-    setCollapsed(window.localStorage.getItem(STORAGE_KEY) === "1");
-  }, []);
 
   // The Sheet doesn't unmount on client-side navigation, so without this a
   // tap on a nav link would leave the drawer open over the new page.
@@ -120,9 +139,7 @@ export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
   }, [pathname]);
 
   function toggle() {
-    const next = !collapsed;
-    setCollapsed(next);
-    window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+    setCollapsedStorage(!collapsed);
   }
 
   return (
@@ -130,7 +147,7 @@ export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
       <aside
         className={cn(
           "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex",
-          mounted ? (collapsed ? "w-16" : "w-64") : "w-64",
+          collapsed ? "w-16" : "w-64",
         )}
       >
         <SidebarContent org={org} role={role} memberships={memberships} collapsed={collapsed} />

@@ -47,3 +47,13 @@ next-env.d.ts
 
 # playwright MCP browser tool artifacts (screenshots, console/network logs)
 /.playwright-mcp/
+
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/
+.swarm/
+
+# playwright CLI browser tool artifacts (screenshots, console/network logs)
+/.playwright-cli/
