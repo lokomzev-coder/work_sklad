@@ -13,29 +13,44 @@ export default async function EditEmployeePage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "employees", "view")) notFound();
 
-  const employee = await prisma.employee.findFirst({
-    where: { id, orgId: ctx.orgId },
-  });
+  const [employee, stores, groups] = await Promise.all([
+    prisma.employee.findFirst({ where: { id, orgId: ctx.orgId } }),
+    prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+    prisma.group.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+  ]);
 
   if (!employee) {
     notFound();
   }
 
   const boundAction = updateEmployee.bind(null, org, employee.id);
-  const canManageMembership = can(ctx.role, "membership", "full");
+  const canManageMembership = can(ctx, "membership", "edit");
 
-  let membership: { login: string; role: import("@/generated/prisma/enums").Role; customRoleId: string | null } | null = null;
+  let membership: {
+    login: string;
+    role: import("@/generated/prisma/enums").Role;
+    customRoleId: string | null;
+    isIndividualRole: boolean;
+  } | null = null;
   let customRoleOptions: { id: string; name: string }[] = [];
   if (canManageMembership) {
     const [membershipRow, roles] = await Promise.all([
       prisma.membership.findFirst({
         where: { employeeId: employee.id, orgId: ctx.orgId },
-        select: { login: true, role: true, customRoleId: true },
+        select: { login: true, role: true, customRoleId: true, customRole: { select: { isIndividual: true } } },
       }),
-      prisma.customRole.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+      prisma.customRole.findMany({ where: { orgId: ctx.orgId, isIndividual: false }, orderBy: { name: "asc" } }),
     ]);
-    membership = membershipRow;
+    membership = membershipRow
+      ? {
+          login: membershipRow.login,
+          role: membershipRow.role,
+          customRoleId: membershipRow.customRoleId,
+          isIndividualRole: membershipRow.customRole?.isIndividual ?? false,
+        }
+      : null;
     customRoleOptions = roles.map((r) => ({ id: r.id, name: r.name }));
   }
 
@@ -45,6 +60,8 @@ export default async function EditEmployeePage({
       <EmployeeForm
         orgSlug={org}
         action={boundAction}
+        storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        groupOptions={groups.map((g) => ({ value: g.id, label: g.name }))}
         defaultValues={employee}
         submitLabel="Сохранить"
       />

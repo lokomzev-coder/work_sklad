@@ -18,6 +18,8 @@ export const employeeSchema = z.object({
     .max(50)
     .optional()
     .transform((v) => v || undefined),
+  defaultStoreId: z.string().min(1).nullable().optional(),
+  groupId: z.string().min(1).nullable().optional(),
 });
 
 export type EmployeeInput = z.infer<typeof employeeSchema>;

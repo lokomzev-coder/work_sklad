@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
-import { assertPermission } from "@/lib/permissions";
+import { assertPermission, can } from "@/lib/permissions";
 import { getStockBalances } from "@/lib/stock";
 import { MovementForm, type ManualMovementType } from "@/components/warehouse/movement-form";
 
@@ -31,7 +31,8 @@ export default async function NewMovementPage({
   }
 
   const ctx = await getOrgContext(org);
-  assertPermission(ctx.role, "warehouse", "edit");
+  if (!can(ctx, "warehouse", "view")) notFound();
+  assertPermission(ctx, "warehouse", "create");
 
   const [stores, catalogItems, balances] = await Promise.all([
     prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
@@ -58,6 +59,7 @@ export default async function NewMovementPage({
         orgSlug={org}
         type={type}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        defaultStoreId={ctx.defaultStoreId}
         catalogOptions={catalogItems.map((c) => ({ value: c.id, label: c.name }))}
         balances={balanceMap}
       />

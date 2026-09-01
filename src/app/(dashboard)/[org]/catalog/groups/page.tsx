@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -23,7 +24,8 @@ export default async function CatalogGroupsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "catalog", "edit");
+  if (!can(ctx, "catalog", "view")) notFound();
+  const canEdit = can(ctx, "catalog", "edit");
 
   const groups = await prisma.catalogGroup.findMany({
     where: { orgId: ctx.orgId },

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -36,6 +37,7 @@ export default async function CatalogPage({
   const { org } = await params;
   const { status, group: groupFilter } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "catalog", "view")) notFound();
 
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
@@ -53,7 +55,7 @@ export default async function CatalogPage({
     prisma.catalogGroup.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
   ]);
 
-  const canEdit = can(ctx.role, "catalog", "edit");
+  const canEdit = can(ctx, "catalog", "edit");
 
   return (
     <div className="flex flex-col gap-4">

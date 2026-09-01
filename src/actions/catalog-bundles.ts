@@ -29,7 +29,7 @@ export async function updateBundleComponents(
   input: UpdateBundleComponentsInput,
 ): Promise<UpdateBundleComponentsResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   const parsed = updateComponentsSchema.safeParse(input);
   if (!parsed.success) {

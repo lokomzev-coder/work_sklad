@@ -23,7 +23,7 @@ export async function createWebhook(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "webhooks", "create");
 
   const parsed = createSchema.safeParse({
     url: formData.get("url"),
@@ -48,7 +48,7 @@ export async function createWebhook(
 
 export async function toggleWebhookActive(orgSlug: string, webhookId: string, isActive: boolean) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "webhooks", "edit");
 
   await prisma.webhook.update({
     where: { id: webhookId, orgId: ctx.orgId },
@@ -60,7 +60,7 @@ export async function toggleWebhookActive(orgSlug: string, webhookId: string, is
 
 export async function deleteWebhook(orgSlug: string, webhookId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "webhooks", "delete");
 
   await prisma.webhook.delete({ where: { id: webhookId, orgId: ctx.orgId } });
 

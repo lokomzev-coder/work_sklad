@@ -33,7 +33,18 @@ export async function getTurnoverReport(orgId: string, range: DateRange = {}): P
     where: {
       movement: {
         orgId,
-        type: { in: ["ENTER", "SUPPLY", "SALES_RETURN", "LOSS", "DEMAND", "PURCHASE_RETURN"] },
+        type: {
+          in: [
+            "ENTER",
+            "SUPPLY",
+            "SALES_RETURN",
+            "LOSS",
+            "DEMAND",
+            "PURCHASE_RETURN",
+            "PRODUCTION_CONSUME",
+            "PRODUCTION_OUTPUT",
+          ],
+        },
         ...(createdAt ? { createdAt } : {}),
       },
     },
@@ -41,7 +52,7 @@ export async function getTurnoverReport(orgId: string, range: DateRange = {}): P
   });
 
   const byItem = new Map<string, TurnoverRow>();
-  const IN_TYPES = new Set(["ENTER", "SUPPLY", "SALES_RETURN"]);
+  const IN_TYPES = new Set(["ENTER", "SUPPLY", "SALES_RETURN", "PRODUCTION_OUTPUT"]);
   for (const line of lines) {
     const row = byItem.get(line.catalogItemId) ?? {
       catalogItemId: line.catalogItemId,
@@ -138,16 +149,22 @@ export interface PnlReport {
 /**
  * Deliberately simplified P&L: revenue is what was actually shipped (DEMAND
  * lines, at the order's snapshotted sale price), cost of goods is what was
- * actually received (SUPPLY lines, at the PO's snapshotted cost) in the same
- * period. This is NOT proper COGS matching (no FIFO/weighted-average
- * costing tying a specific sold unit to the batch it was purchased in) —
- * it's a rough period P&L, good enough for a MVP "Деньги/P&L" view. Amounts
- * are converted to the org's base currency (lib/currency.ts) before summing.
+ * actually received in the period — either bought (SUPPLY lines, at the PO's
+ * snapshotted cost) or manufactured (PRODUCTION_OUTPUT lines, at the costed
+ * unitPriceSnapshot computed in completeProductionOrder from consumed
+ * materials + techCard.laborCost). PRODUCTION_CONSUME is deliberately
+ * excluded here — the raw materials it consumes were already counted once,
+ * when they were originally bought (SUPPLY); counting them again as they're
+ * consumed into production would double the cost. This is NOT proper COGS
+ * matching (no FIFO/weighted-average costing tying a specific sold unit to
+ * the batch it was purchased or produced in) — it's a rough period P&L, good
+ * enough for a MVP "Деньги/P&L" view. Amounts are converted to the org's base
+ * currency (lib/currency.ts) before summing.
  */
 export async function getPnlReport(orgId: string, range: DateRange = {}): Promise<PnlReport> {
   const createdAt = dateFilter(range);
 
-  const [demandLines, supplyLines, baseCurrency, rates] = await Promise.all([
+  const [demandLines, supplyLines, productionOutputLines, baseCurrency, rates] = await Promise.all([
     prisma.stockMovementLine.findMany({
       where: { movement: { orgId, type: "DEMAND", ...(createdAt ? { createdAt } : {}) } },
       select: { quantity: true, unitPriceSnapshot: true, currency: true },
@@ -156,20 +173,23 @@ export async function getPnlReport(orgId: string, range: DateRange = {}): Promis
       where: { movement: { orgId, type: "SUPPLY", ...(createdAt ? { createdAt } : {}) } },
       select: { quantity: true, unitPriceSnapshot: true, currency: true },
     }),
+    prisma.stockMovementLine.findMany({
+      where: { movement: { orgId, type: "PRODUCTION_OUTPUT", ...(createdAt ? { createdAt } : {}) } },
+      select: { quantity: true, unitPriceSnapshot: true, currency: true },
+    }),
     getOrgBaseCurrency(orgId),
     getLatestRates(orgId),
   ]);
 
-  const revenue = demandLines.reduce(
-    (sum, l) =>
-      sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
-    0,
-  );
-  const costOfGoods = supplyLines.reduce(
-    (sum, l) =>
-      sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
-    0,
-  );
+  const sumLines = (lines: { quantity: unknown; unitPriceSnapshot: unknown; currency: string | null }[]) =>
+    lines.reduce(
+      (sum, l) =>
+        sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
+      0,
+    );
+
+  const revenue = sumLines(demandLines);
+  const costOfGoods = sumLines(supplyLines) + sumLines(productionOutputLines);
 
   return { revenue, costOfGoods, grossMargin: revenue - costOfGoods, baseCurrency };
 }

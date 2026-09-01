@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { buildScopeWhere } from "@/lib/scope";
 import { Button } from "@/components/ui/button";
 import {
   ArchivableEntityTable,
@@ -21,22 +23,25 @@ export default async function ClientsPage({
   const { org } = await params;
   const { status } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "clients", "view")) notFound();
 
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
 
+  const scopeWhere = await buildScopeWhere(ctx, "clients");
   const clients = await prisma.client.findMany({
-    where: { orgId: ctx.orgId, status: activeTab },
+    where: { orgId: ctx.orgId, status: activeTab, ...scopeWhere },
     orderBy: { createdAt: "desc" },
   });
 
-  const canEdit = can(ctx.role, "clients", "edit");
+  const canEdit = can(ctx, "clients", "edit");
+  const canCreate = can(ctx, "clients", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Клиенты</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/clients/new`} />}>
             Добавить клиента
           </Button>

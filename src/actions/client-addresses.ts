@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertRowScope } from "@/lib/scope";
 import { clientAddressSchema } from "@/lib/validation/client-address";
 
 export interface ActionResult {
@@ -17,7 +18,8 @@ export async function createClientAddress(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "edit");
+  await assertRowScope(ctx, "clients", clientId);
 
   const parsed = clientAddressSchema.safeParse({
     label: formData.get("label"),
@@ -40,7 +42,8 @@ export async function createClientAddress(
 
 export async function deleteClientAddress(orgSlug: string, clientId: string, addressId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "edit");
+  await assertRowScope(ctx, "clients", clientId);
 
   const client = await prisma.client.findFirst({ where: { id: clientId, orgId: ctx.orgId } });
   if (!client) {

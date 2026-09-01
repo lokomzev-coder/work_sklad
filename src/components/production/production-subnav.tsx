@@ -3,12 +3,14 @@ import { cn } from "@/lib/utils";
 
 interface ProductionSubnavProps {
   org: string;
-  active: "tasks" | "tech-cards";
+  active: "tasks" | "tech-cards" | "stages" | "tech-processes";
 }
 
 const TABS = [
   { key: "tasks", label: "Задания", href: "" },
   { key: "tech-cards", label: "Техкарты", href: "/tech-cards" },
+  { key: "stages", label: "Этапы", href: "/stages" },
+  { key: "tech-processes", label: "Техпроцессы", href: "/tech-processes" },
 ] as const;
 
 export function ProductionSubnav({ org, active }: ProductionSubnavProps) {

@@ -63,6 +63,14 @@ export default async function NewOrderPage({
         salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
         customFieldDefs={customFieldDefs}
+        defaultValues={{
+          clientId: null,
+          assignedEmployeeId: null,
+          contractId: null,
+          salesChannelId: null,
+          legalEntityId: ctx.defaultLegalEntityId,
+          lineItems: [],
+        }}
       />
     </div>
   );

@@ -21,7 +21,7 @@ export async function createSalesChannel(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "salesChannels", "create");
 
   const parsed = parseForm(formData);
   if (!parsed.success) {
@@ -40,7 +40,7 @@ export async function createSalesChannel(
 
 export async function deleteSalesChannel(orgSlug: string, channelId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "salesChannels", "delete");
 
   const usageCount = await prisma.order.count({ where: { salesChannelId: channelId, orgId: ctx.orgId } });
   if (usageCount > 0) {

@@ -12,7 +12,7 @@ export default async function WebhooksPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "read")) notFound();
+  if (!can(ctx, "webhooks", "view")) notFound();
 
   const webhooks = await prisma.webhook.findMany({
     where: { orgId: ctx.orgId },

@@ -13,7 +13,6 @@ import {
   FileText,
   BarChart3,
   Users,
-  KeyRound,
   Settings,
   Factory,
   PanelLeftClose,
@@ -26,7 +25,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { OrgSidebarNav, type NavItem } from "@/components/layout/org-sidebar-nav";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import type { OrgMembership } from "@/types/next-auth";
-import type { Role } from "@/generated/prisma/enums";
+import { can, type Resource, type ResourcePermission } from "@/lib/permissions";
 
 const STORAGE_KEY = "ew-sidebar-collapsed";
 
@@ -59,20 +58,27 @@ function setCollapsedStorage(next: boolean) {
 // forwardRef objects, not plain data), so the nav list — icons included —
 // lives here in the client tree rather than being built server-side and
 // passed down.
-const NAV_ITEMS: NavItem[] = [
-  { href: "", label: "Дашборд", icon: LayoutDashboard, group: "Обзор" },
-  { href: "/orders", label: "Заказы", icon: ShoppingCart, group: "Продажи" },
-  { href: "/clients", label: "Клиенты", icon: Contact, group: "Продажи" },
-  { href: "/catalog", label: "Товары и услуги", icon: Package, group: "Продажи" },
-  { href: "/purchase-orders", label: "Заказы поставщику", icon: Truck, group: "Снабжение и склад" },
-  { href: "/warehouse", label: "Склад", icon: Warehouse, group: "Снабжение и склад" },
-  { href: "/production", label: "Производство", icon: Factory, group: "Снабжение и склад" },
-  { href: "/payments", label: "Платежи", icon: Wallet, group: "Финансы" },
-  { href: "/contracts", label: "Договоры", icon: FileText, group: "Финансы" },
-  { href: "/reports", label: "Отчёты", icon: BarChart3, group: "Финансы" },
-  { href: "/employees", label: "Сотрудники", icon: Users, group: "Управление" },
-  { href: "/vault", label: "Пароли", icon: KeyRound, group: "Управление" },
-  { href: "/settings/legal-entities", label: "Настройки", icon: Settings, group: "Управление" },
+interface GatedNavItem extends NavItem {
+  /** Block I2.1 — null means always shown (nothing to gate on); otherwise
+   * the item only renders when `can(ctx, resource, "view")`. */
+  resource: Resource | null;
+}
+
+const NAV_ITEMS: GatedNavItem[] = [
+  { href: "", label: "Дашборд", icon: LayoutDashboard, group: "Обзор", resource: "dashboard" },
+  { href: "/orders", label: "Заказы", icon: ShoppingCart, group: "Продажи", resource: "orders" },
+  { href: "/clients", label: "Клиенты", icon: Contact, group: "Продажи", resource: "clients" },
+  { href: "/catalog", label: "Товары и услуги", icon: Package, group: "Продажи", resource: "catalog" },
+  { href: "/purchase-orders", label: "Заказы поставщику", icon: Truck, group: "Снабжение и склад", resource: "purchaseOrders" },
+  { href: "/warehouse", label: "Склад", icon: Warehouse, group: "Снабжение и склад", resource: "warehouse" },
+  { href: "/production", label: "Производство", icon: Factory, group: "Снабжение и склад", resource: "productionOrders" },
+  { href: "/payments", label: "Платежи", icon: Wallet, group: "Финансы", resource: "payments" },
+  { href: "/contracts", label: "Договоры", icon: FileText, group: "Финансы", resource: "contracts" },
+  { href: "/reports", label: "Отчёты", icon: BarChart3, group: "Финансы", resource: "reports" },
+  { href: "/employees", label: "Сотрудники", icon: Users, group: "Управление", resource: "employees" },
+  // Vault ("Пароли") nav entry deliberately removed — the feature is hidden
+  // for now (see (dashboard)/[org]/vault/layout.tsx), not deleted.
+  { href: "/settings/legal-entities", label: "Настройки", icon: Settings, group: "Управление", resource: "legalEntities" },
 ];
 
 // The hamburger button lives in the header, the drawer it opens lives beside
@@ -102,14 +108,14 @@ export function MobileSidebarTrigger() {
 
 interface SidebarContentProps {
   org: string;
-  role: Role;
+  capabilities: Record<Resource, ResourcePermission>;
   memberships: OrgMembership[];
   collapsed: boolean;
 }
 
-function SidebarContent({ org, role, memberships, collapsed }: SidebarContentProps) {
+function SidebarContent({ org, capabilities, memberships, collapsed }: SidebarContentProps) {
   const items = NAV_ITEMS.filter(
-    (item) => (item.href !== "/vault" && item.href !== "/settings/legal-entities") || role !== "EMPLOYEE",
+    (item) => item.resource === null || can({ capabilities }, item.resource, "view"),
   );
 
   return (
@@ -122,11 +128,11 @@ function SidebarContent({ org, role, memberships, collapsed }: SidebarContentPro
 
 interface SidebarShellProps {
   org: string;
-  role: Role;
+  capabilities: Record<Resource, ResourcePermission>;
   memberships: OrgMembership[];
 }
 
-export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
+export function SidebarShell({ org, capabilities, memberships }: SidebarShellProps) {
   const { open, setOpen } = useMobileSidebar();
   const collapsed = useSyncExternalStore(subscribeCollapsed, getCollapsedSnapshot, getCollapsedServerSnapshot);
   const pathname = usePathname();
@@ -150,7 +156,7 @@ export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
           collapsed ? "w-16" : "w-64",
         )}
       >
-        <SidebarContent org={org} role={role} memberships={memberships} collapsed={collapsed} />
+        <SidebarContent org={org} capabilities={capabilities} memberships={memberships} collapsed={collapsed} />
         <div className="border-t border-sidebar-border p-2">
           <Button
             variant="ghost"
@@ -169,7 +175,7 @@ export function SidebarShell({ org, role, memberships }: SidebarShellProps) {
           <SheetHeader className="sr-only">
             <SheetTitle>Меню навигации</SheetTitle>
           </SheetHeader>
-          <SidebarContent org={org} role={role} memberships={memberships} collapsed={false} />
+          <SidebarContent org={org} capabilities={capabilities} memberships={memberships} collapsed={false} />
         </SheetContent>
       </Sheet>
     </>

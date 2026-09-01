@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getTurnoverReport } from "@/lib/reports";
 import {
   Table,
@@ -21,6 +23,7 @@ export default async function TurnoverReportPage({
   const { org } = await params;
   const { from, to } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "reports", "view")) notFound();
 
   const rows = await getTurnoverReport(ctx.orgId, {
     from: from ? new Date(from) : undefined,

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertRowScope, resolveGroupMemberIds } from "@/lib/scope";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
@@ -46,31 +47,15 @@ async function nextPurchaseOrderNumber(orgId: string): Promise<number> {
   return (last?.number ?? 0) + 1;
 }
 
-/** Block I: an OWN-scoped custom role may only touch purchase orders assigned
- * to its own Employee record — mirrors assertOwnOrderScope in actions/orders.ts. */
-async function assertOwnPurchaseOrderScope(
-  ctx: { orgId: string; purchaseOrderScope: "ALL" | "OWN"; employeeId: string | null },
-  purchaseOrderId: string,
-) {
-  if (ctx.purchaseOrderScope !== "OWN") return;
-  const purchaseOrder = await prisma.purchaseOrder.findFirst({
-    where: { id: purchaseOrderId, orgId: ctx.orgId },
-    select: { assignedEmployeeId: true },
-  });
-  if (!purchaseOrder || purchaseOrder.assignedEmployeeId !== ctx.employeeId) {
-    throw new Error("Недостаточно прав: этот заказ поставщику назначен не вам");
-  }
-}
-
 export async function upsertPurchaseOrder(
   orgSlug: string,
   purchaseOrderId: string | null,
   input: UpsertPurchaseOrderInput,
 ): Promise<UpsertPurchaseOrderResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "purchaseOrders", purchaseOrderId ? "edit" : "create");
   if (purchaseOrderId) {
-    await assertOwnPurchaseOrderScope(ctx, purchaseOrderId);
+    await assertRowScope(ctx, "purchaseOrders", purchaseOrderId);
   }
 
   const parsed = upsertPurchaseOrderSchema.safeParse(input);
@@ -78,9 +63,16 @@ export async function upsertPurchaseOrder(
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
   }
   // Same override-not-reject approach as upsertOrder: an OWN-scoped role can
-  // only ever create/keep POs assigned to themselves.
-  if (ctx.purchaseOrderScope === "OWN") {
+  // only ever create/keep POs assigned to themselves; OWN_GROUP validates
+  // against the actor's own department rather than silently overriding.
+  const poEditScope = ctx.capabilities.purchaseOrders.edit;
+  if (poEditScope === "OWN") {
     parsed.data.assignedEmployeeId = ctx.employeeId;
+  } else if (poEditScope === "OWN_GROUP" && parsed.data.assignedEmployeeId) {
+    const memberIds = ctx.groupId ? await resolveGroupMemberIds(ctx.orgId, ctx.groupId) : [];
+    if (!memberIds.includes(parsed.data.assignedEmployeeId)) {
+      return { error: "Можно назначить только на сотрудника вашего отдела" };
+    }
   }
 
   const catalogItemIds = [
@@ -175,8 +167,8 @@ export async function updatePurchaseOrderStatus(
   statusId: string,
 ) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
-  await assertOwnPurchaseOrderScope(ctx, purchaseOrderId);
+  assertPermission(ctx, "purchaseOrders", "edit");
+  await assertRowScope(ctx, "purchaseOrders", purchaseOrderId);
 
   const purchaseOrder = await prisma.purchaseOrder.findFirst({
     where: { id: purchaseOrderId, orgId: ctx.orgId },

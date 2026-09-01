@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { isRowVisible } from "@/lib/scope";
 import { PrintDocument } from "@/components/print/print-document";
 
 export default async function PrintPurchaseOrderPage({
@@ -10,6 +12,7 @@ export default async function PrintPurchaseOrderPage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "purchaseOrders", "view")) notFound();
 
   const purchaseOrder = await prisma.purchaseOrder.findFirst({
     where: { id, orgId: ctx.orgId },
@@ -20,6 +23,7 @@ export default async function PrintPurchaseOrderPage({
     },
   });
   if (!purchaseOrder) notFound();
+  if (!(await isRowVisible(ctx, "purchaseOrders", purchaseOrder.assignedEmployeeId))) notFound();
 
   const defaultLegalEntity = purchaseOrder.legalEntity
     ? null

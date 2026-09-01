@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getMoneyReport } from "@/lib/reports";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +29,7 @@ export default async function MoneyReportPage({
   const { org } = await params;
   const { from, to } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "reports", "view")) notFound();
 
   const report = await getMoneyReport(ctx.orgId, {
     from: from ? new Date(from) : undefined,

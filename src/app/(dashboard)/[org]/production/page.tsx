@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { buildScopeWhere } from "@/lib/scope";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,21 +24,29 @@ export default async function ProductionOrdersPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "productionOrders", "view")) notFound();
 
+  const scopeWhere = await buildScopeWhere(ctx, "productionOrders");
   const productionOrders = await prisma.productionOrder.findMany({
-    where: { orgId: ctx.orgId },
+    where: { orgId: ctx.orgId, ...scopeWhere },
     orderBy: { number: "desc" },
-    include: { techCard: { include: { outputItem: true } }, store: true, status: true, assignedEmployee: true },
+    include: {
+      techCard: { include: { outputItem: true } },
+      materialsStore: true,
+      productsStore: true,
+      status: true,
+      assignedEmployee: true,
+    },
   });
 
-  const canEdit = can(ctx.role, "production", "edit");
+  const canCreate = can(ctx, "productionOrders", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <ProductionSubnav org={org} active="tasks" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Производственные задания</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/production/new`} />}>Новое задание</Button>
         )}
       </div>
@@ -70,7 +80,11 @@ export default async function ProductionOrdersPage({
                   <TableCell>
                     {po.quantity.toString()} × {po.techCard.outputItem.name}
                   </TableCell>
-                  <TableCell>{po.store.name}</TableCell>
+                  <TableCell>
+                    {po.materialsStoreId === po.productsStoreId
+                      ? po.materialsStore.name
+                      : `${po.materialsStore.name} → ${po.productsStore.name}`}
+                  </TableCell>
                   <TableCell>
                     <Badge variant="outline" className={statusBadgeClass(po.status.color)}>
                       {po.status.name}

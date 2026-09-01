@@ -14,7 +14,7 @@ export default async function DocumentStatusesPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "read")) notFound();
+  if (!can(ctx, "documentStatuses", "view")) notFound();
 
   const [
     orderStatuses,

@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface SettingsSubnavProps {
   org: string;
-  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "webhooks" | "roles";
+  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "webhooks" | "roles" | "groups";
 }
 
 const TABS = [
@@ -13,6 +13,7 @@ const TABS = [
   { key: "custom-fields", label: "Доп. поля", href: "/custom-fields" },
   { key: "webhooks", label: "Вебхуки", href: "/webhooks" },
   { key: "roles", label: "Роли доступа", href: "/roles" },
+  { key: "groups", label: "Отделы", href: "/groups" },
 ] as const;
 
 export function SettingsSubnav({ org, active }: SettingsSubnavProps) {

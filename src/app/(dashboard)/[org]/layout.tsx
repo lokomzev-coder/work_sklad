@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getOrgContext } from "@/lib/tenant";
 import { auth } from "@/lib/auth";
 import { logoutAction } from "@/actions/auth";
@@ -16,13 +18,19 @@ export default async function OrgLayout({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  // Block F3: a PRODUCTION login has no business in the regular dashboard
+  // (CAPABILITIES.PRODUCTION is "none" everywhere but production) — send it
+  // straight to its own interface instead of rendering a mostly-empty shell.
+  if (ctx.role === "PRODUCTION") {
+    redirect(`/${org}/floor`);
+  }
   const session = await auth();
   const memberships = session?.memberships ?? [];
 
   return (
     <SidebarProvider>
       <div className="flex min-h-svh">
-        <SidebarShell org={org} role={ctx.role} memberships={memberships} />
+        <SidebarShell org={org} capabilities={ctx.capabilities} memberships={memberships} />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex items-center justify-between gap-2 border-b px-3 py-3 sm:gap-4 sm:px-6">
             <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
@@ -35,6 +43,9 @@ export default async function OrgLayout({
               <span className="hidden text-sm text-muted-foreground sm:inline">
                 Роль: {ctx.role}
               </span>
+              <Button variant="ghost" size="sm" render={<Link href={`/${org}/settings/profile`} />}>
+                Профиль
+              </Button>
               <form action={logoutAction}>
                 <Button type="submit" variant="outline" size="sm">
                   Выйти

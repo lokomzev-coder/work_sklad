@@ -10,7 +10,7 @@ export interface ActionResult {
   error?: string;
 }
 
-const roleSchema = z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]);
+const roleSchema = z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]);
 
 export async function createStatusTransition(
   orgSlug: string,
@@ -21,7 +21,7 @@ export async function createStatusTransition(
   allowedEmployeeIds: string[] = [],
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "create");
 
   if (!fromStatusId || !toStatusId) {
     return { error: "Выберите оба статуса" };
@@ -72,7 +72,7 @@ export async function createStatusTransition(
 
 export async function deleteStatusTransition(orgSlug: string, transitionId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "delete");
 
   const transition = await prisma.documentStatusTransition.findFirst({
     where: { id: transitionId, fromStatus: { orgId: ctx.orgId } },

@@ -17,7 +17,7 @@ const grantSchema = z.object({
   login: z.string().trim().toLowerCase().regex(LOGIN_REGEX, "Логин: латиница/цифры, без пробелов и @"),
   email: z.email("Некорректный email"),
   password: z.string().trim().min(8, "Минимум 8 символов").max(200).optional(),
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]),
   customRoleId: z.string().optional(),
 });
 
@@ -36,8 +36,8 @@ export async function grantEmployeeAccess(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "employees", "full");
-  assertPermission(ctx.role, "membership", "full");
+  assertPermission(ctx, "employees", "edit");
+  assertPermission(ctx, "membership", "create");
 
   const parsed = grantSchema.safeParse({
     login: formData.get("login"),
@@ -95,15 +95,26 @@ export async function grantEmployeeAccess(
 
 export async function revokeEmployeeAccess(orgSlug: string, employeeId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "membership", "full");
+  assertPermission(ctx, "membership", "delete");
+
+  // Block I2.1: an individual role only ever belongs to one Membership —
+  // revoking access orphans it, so clean it up rather than leaving a dead
+  // row behind (named roles are left alone; other memberships may use them).
+  const membership = await prisma.membership.findFirst({
+    where: { employeeId, orgId: ctx.orgId },
+    include: { customRole: { select: { id: true, isIndividual: true } } },
+  });
 
   await prisma.membership.deleteMany({ where: { employeeId, orgId: ctx.orgId } });
+  if (membership?.customRole?.isIndividual) {
+    await prisma.customRole.delete({ where: { id: membership.customRole.id } }).catch(() => {});
+  }
 
   revalidatePath(`/${orgSlug}/employees/${employeeId}`);
 }
 
 const updateSchema = z.object({
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE"]),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]),
   customRoleId: z.string().optional(),
 });
 
@@ -113,7 +124,7 @@ export async function updateEmployeeAccess(
   formData: FormData,
 ) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "membership", "full");
+  assertPermission(ctx, "membership", "edit");
 
   const parsed = updateSchema.safeParse({
     role: formData.get("role"),
@@ -126,10 +137,57 @@ export async function updateEmployeeAccess(
     if (!role) return;
   }
 
+  const existing = await prisma.membership.findFirst({
+    where: { employeeId, orgId: ctx.orgId },
+    include: { customRole: { select: { id: true, isIndividual: true } } },
+  });
+
   await prisma.membership.updateMany({
     where: { employeeId, orgId: ctx.orgId },
     data: { role: parsed.data.role, customRoleId: parsed.data.customRoleId ?? null },
   });
 
+  // Switching away from an individual role orphans it (see revokeEmployeeAccess).
+  if (existing?.customRole?.isIndividual && existing.customRole.id !== parsed.data.customRoleId) {
+    await prisma.customRole.delete({ where: { id: existing.customRole.id } }).catch(() => {});
+  }
+
   revalidatePath(`/${orgSlug}/employees/${employeeId}`);
+}
+
+/**
+ * Block I2.1 — "Индивидуальные настройки" on an employee's Access card:
+ * ensures the Membership has its own hidden CustomRole (creating one, empty,
+ * if it doesn't already) and returns its id so the UI can link to the
+ * matrix editor. Idempotent — calling this again on an already-individual
+ * membership just returns the existing role's id, doesn't reset it.
+ */
+export async function switchToIndividualRole(
+  orgSlug: string,
+  employeeId: string,
+): Promise<ActionResult & { roleId?: string }> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "membership", "edit");
+
+  const membership = await prisma.membership.findFirst({
+    where: { employeeId, orgId: ctx.orgId },
+    include: { customRole: { select: { id: true, isIndividual: true } } },
+  });
+  if (!membership) return { error: "Доступ не найден" };
+  if (membership.customRole?.isIndividual) return { roleId: membership.customRole.id };
+
+  // A previously-assigned NAMED role (if any) is left untouched — it may be
+  // shared with other memberships, only individual roles get cleaned up.
+  const role = await prisma.customRole.create({
+    data: {
+      orgId: ctx.orgId,
+      name: `__individual__${employeeId}`,
+      isIndividual: true,
+      permissions: { version: 2, resources: {} },
+    },
+  });
+  await prisma.membership.update({ where: { id: membership.id }, data: { customRoleId: role.id } });
+
+  revalidatePath(`/${orgSlug}/employees/${employeeId}`);
+  return { roleId: role.id };
 }

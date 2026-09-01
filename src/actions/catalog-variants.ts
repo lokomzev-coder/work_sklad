@@ -60,7 +60,7 @@ export async function createCatalogVariant(
   input: CatalogVariantInput,
 ): Promise<CatalogVariantResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "create");
 
   const parsed = variantSchema.safeParse(input);
   if (!parsed.success) {
@@ -96,7 +96,7 @@ export async function deleteCatalogVariant(
   variantId: string,
 ): Promise<CatalogVariantResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "delete");
 
   const catalogItem = await prisma.catalogItem.findFirst({
     where: { id: catalogItemId, orgId: ctx.orgId },

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertRowScope, resolveGroupMemberIds } from "@/lib/scope";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
@@ -48,31 +49,15 @@ async function nextOrderNumber(orgId: string): Promise<number> {
   return (last?.number ?? 0) + 1;
 }
 
-/** Block I: an OWN-scoped custom role may only touch orders assigned to its
- * own Employee record. Thrown as a plain Error, same as assertPermission. */
-async function assertOwnOrderScope(
-  ctx: { orgId: string; orderScope: "ALL" | "OWN"; employeeId: string | null },
-  orderId: string,
-) {
-  if (ctx.orderScope !== "OWN") return;
-  const order = await prisma.order.findFirst({
-    where: { id: orderId, orgId: ctx.orgId },
-    select: { assignedEmployeeId: true },
-  });
-  if (!order || order.assignedEmployeeId !== ctx.employeeId) {
-    throw new Error("Недостаточно прав: этот заказ назначен не вам");
-  }
-}
-
 export async function upsertOrder(
   orgSlug: string,
   orderId: string | null,
   input: UpsertOrderInput,
 ): Promise<UpsertOrderResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "orders", orderId ? "edit" : "create");
   if (orderId) {
-    await assertOwnOrderScope(ctx, orderId);
+    await assertRowScope(ctx, "orders", orderId);
   }
 
   const parsed = upsertOrderSchema.safeParse(input);
@@ -82,9 +67,17 @@ export async function upsertOrder(
   // OWN-scoped roles can only ever create/keep orders assigned to themselves
   // — overriding the submitted value (rather than rejecting it) means the
   // combobox can stay editable in the UI without a special-cased read-only
-  // variant just for this one role shape.
-  if (ctx.orderScope === "OWN") {
+  // variant just for this one role shape. OWN_GROUP-scoped roles may assign
+  // to anyone in their own department — validated, not silently overridden,
+  // since "which one of my group" isn't a single obvious default.
+  const ordersEditScope = ctx.capabilities.orders.edit;
+  if (ordersEditScope === "OWN") {
     parsed.data.assignedEmployeeId = ctx.employeeId;
+  } else if (ordersEditScope === "OWN_GROUP" && parsed.data.assignedEmployeeId) {
+    const memberIds = ctx.groupId ? await resolveGroupMemberIds(ctx.orgId, ctx.groupId) : [];
+    if (!memberIds.includes(parsed.data.assignedEmployeeId)) {
+      return { error: "Можно назначить только на сотрудника вашего отдела" };
+    }
   }
 
   const catalogItemIds = [
@@ -214,8 +207,8 @@ export async function updateOrderStatus(
   statusId: string,
 ) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
-  await assertOwnOrderScope(ctx, orderId);
+  assertPermission(ctx, "orders", "edit");
+  await assertRowScope(ctx, "orders", orderId);
 
   const order = await prisma.order.findFirst({
     where: { id: orderId, orgId: ctx.orgId },

@@ -45,6 +45,9 @@ interface FulfillmentPanelProps {
   kind: FulfillmentKind;
   parentId: string;
   storeOptions: ComboboxOption[];
+  /** Block I2.2: pre-fills the store picker with the acting employee's
+   * default store, if they have one — just a convenience, still changeable. */
+  defaultStoreId?: string | null;
   lines: FulfillmentLine[];
   history: FulfillmentHistoryEntry[];
 }
@@ -106,13 +109,14 @@ export function FulfillmentPanel({
   kind,
   parentId,
   storeOptions,
+  defaultStoreId = null,
   lines,
   history,
 }: FulfillmentPanelProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeId, setStoreId] = useState<string | null>(defaultStoreId);
   const [quantities, setQuantities] = useState<Record<string, string>>({});
 
   const labels = LABELS[kind];

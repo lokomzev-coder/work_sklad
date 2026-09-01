@@ -53,7 +53,7 @@ export async function createCatalogItem(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "create");
 
   const parsed = parseCatalogItemForm(formData);
   if (!parsed.success) {
@@ -77,7 +77,7 @@ export async function updateCatalogItem(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   const parsed = parseCatalogItemForm(formData);
   if (!parsed.success) {
@@ -101,7 +101,7 @@ export async function updateCatalogItem(
 
 export async function archiveCatalogItem(orgSlug: string, itemId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   await prisma.catalogItem.update({
     where: { id: itemId, orgId: ctx.orgId },
@@ -113,7 +113,7 @@ export async function archiveCatalogItem(orgSlug: string, itemId: string) {
 
 export async function restoreCatalogItem(orgSlug: string, itemId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   await prisma.catalogItem.update({
     where: { id: itemId, orgId: ctx.orgId },
@@ -125,7 +125,7 @@ export async function restoreCatalogItem(orgSlug: string, itemId: string) {
 
 export async function deleteCatalogItem(orgSlug: string, itemId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "delete");
 
   const result = await archiveOrDelete("catalogItem", itemId, ctx.orgId);
 

@@ -10,10 +10,17 @@ export default async function NewTechCardPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const products = await prisma.catalogItem.findMany({
-    where: { orgId: ctx.orgId, status: "ACTIVE", type: "PRODUCT" },
-    orderBy: { name: "asc" },
-  });
+  const [products, techProcesses] = await Promise.all([
+    prisma.catalogItem.findMany({
+      where: { orgId: ctx.orgId, status: "ACTIVE", type: "PRODUCT" },
+      orderBy: { name: "asc" },
+    }),
+    prisma.techProcess.findMany({
+      where: { orgId: ctx.orgId, status: "ACTIVE" },
+      include: { positions: { include: { processingStage: true }, orderBy: { position: "asc" } } },
+      orderBy: { name: "asc" },
+    }),
+  ]);
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">
@@ -22,6 +29,11 @@ export default async function NewTechCardPage({
         orgSlug={org}
         techCardId={null}
         productOptions={products.map((p) => ({ value: p.id, label: p.name }))}
+        techProcesses={techProcesses.map((tp) => ({
+          id: tp.id,
+          name: tp.name,
+          positions: tp.positions.map((p) => ({ id: p.id, stageName: p.processingStage.name })),
+        }))}
       />
     </div>
   );

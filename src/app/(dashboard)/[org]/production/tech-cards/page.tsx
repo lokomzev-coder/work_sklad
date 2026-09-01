@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -20,6 +21,7 @@ export default async function TechCardsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "techCards", "view")) notFound();
 
   const techCards = await prisma.techCard.findMany({
     where: { orgId: ctx.orgId, status: "ACTIVE" },
@@ -27,7 +29,7 @@ export default async function TechCardsPage({
     orderBy: { name: "asc" },
   });
 
-  const canEdit = can(ctx.role, "production", "edit");
+  const canEdit = can(ctx, "techCards", "edit");
 
   return (
     <div className="flex flex-col gap-4">

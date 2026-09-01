@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -25,6 +26,7 @@ export default async function EmployeesPage({
   const { org } = await params;
   const { status } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "employees", "view")) notFound();
 
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
@@ -34,13 +36,14 @@ export default async function EmployeesPage({
     orderBy: { createdAt: "desc" },
   });
 
-  const canEdit = can(ctx.role, "employees", "edit");
+  const canEdit = can(ctx, "employees", "edit");
+  const canCreate = can(ctx, "employees", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Сотрудники</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/employees/new`} />}>
             Добавить сотрудника
           </Button>

@@ -16,6 +16,10 @@ enum Role {
   ADMIN
   MANAGER
   EMPLOYEE
+  // Block F3: floor-only role — locked out of the regular dashboard, sees
+  // only the /floor production interface (see lib/permissions.ts
+  // CAPABILITIES.PRODUCTION and the (floor) route group's layout gates).
+  PRODUCTION
 }
 
 model User {
@@ -46,6 +50,7 @@ model Organization {
 
   memberships            Membership[]
   employees              Employee[]
+  groups                 Group[]
   clients                Client[]
   catalogItems           CatalogItem[]
   catalogGroups          CatalogGroup[]
@@ -68,6 +73,9 @@ model Organization {
   customRoles            CustomRole[]
   techCards              TechCard[]
   productionOrders       ProductionOrder[]
+  processingStages       ProcessingStage[]
+  techProcesses          TechProcess[]
+  productionStages       ProductionStage[]
 }
 
 model Membership {
@@ -109,6 +117,26 @@ enum EntityStatus {
   ARCHIVED
 }
 
+// Block I2.1: flat department/team grouping (МойСклад's "отдел") — no
+// nesting, exists only to power the OWN_GROUP visibility scope in
+// lib/permissions.ts. An employee whose CustomRole grants OWN_GROUP on a
+// scoped resource sees rows owned by anyone sharing their Group, not just
+// their own — see lib/scope.ts::resolveGroupMemberIds.
+model Group {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  status     EntityStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+
+  employees Employee[]
+
+  @@unique([orgId, name])
+  @@index([orgId, status])
+}
+
 model Employee {
   id         String       @id @default(cuid())
   orgId      String
@@ -121,15 +149,37 @@ model Employee {
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
 
+  // Block I2.2: pre-fills the store selector on new documents (order
+  // fulfillment, warehouse movements, production orders) for this employee.
+  // Purely a UI convenience default — never enforced server-side, a
+  // different store can always be picked. Self-service editable from
+  // /settings/profile (Block I2.4), same as by an admin on the employee card.
+  defaultStoreId String?
+  defaultStore   Store?  @relation(fields: [defaultStoreId], references: [id], onDelete: SetNull)
+
+  // Block I2.4: same idea as defaultStoreId, for the legalEntityId selector
+  // on new Order/PurchaseOrder documents. Falls back to the org's single
+  // LegalEntity.isDefault when unset (see lib/tenant.ts::getOrgContext).
+  defaultLegalEntityId String?
+  defaultLegalEntity   LegalEntity? @relation(fields: [defaultLegalEntityId], references: [id], onDelete: SetNull)
+
+  // Block I2.1: OWN_GROUP visibility scope groups employees by this —
+  // optional, an unassigned employee's OWN_GROUP behaves like OWN for them.
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+
   ordersAssigned           Order[]               @relation("AssignedEmployee")
   purchaseOrdersAssigned   PurchaseOrder[]       @relation("AssignedEmployeePO")
   productionOrdersAssigned ProductionOrder[]     @relation("AssignedEmployeeProduction")
+  clientsAssigned          Client[]              @relation("AssignedEmployeeClient")
+  productionStageCompletions ProductionStageCompletion[]
   vaultAccess              EmployeeVaultAccess[]
   // Opposite side of Membership.employeeId — set only if this employee has
   // been granted a personal login (Block I self-service).
   membership               Membership?
 
   @@index([orgId, status])
+  @@index([orgId, groupId])
 }
 
 model Client {
@@ -151,6 +201,14 @@ model Client {
   status     EntityStatus @default(ACTIVE)
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
+
+  // Block I2.1: powers OWN/OWN_GROUP visibility scope on the "clients"
+  // resource — set to the creating employee on createClient/quickCreateClient
+  // (src/actions/clients.ts), same pattern as Order/PurchaseOrder/
+  // ProductionOrder.assignedEmployeeId. Unlike those, editable afterwards
+  // (reassignable), since a client isn't a one-shot document.
+  assignedEmployeeId String?
+  assignedEmployee   Employee? @relation("AssignedEmployeeClient", fields: [assignedEmployeeId], references: [id])
 
   orders         Order[]
   purchaseOrders PurchaseOrder[] @relation("Supplier")
@@ -379,7 +437,9 @@ model Store {
 
   movementsAsSource      StockMovement[] @relation("SourceStore")
   movementsAsDestination StockMovement[] @relation("DestinationStore")
-  productionOrders       ProductionOrder[]
+  productionOrdersAsMaterialsStore ProductionOrder[] @relation("ProductionMaterialsStore")
+  productionOrdersAsProductsStore  ProductionOrder[] @relation("ProductionProductsStore")
+  employeesWithDefaultStore Employee[]
 
   @@index([orgId, status])
 }
@@ -489,8 +549,9 @@ model LegalEntity {
   archivedAt  DateTime?
   createdAt   DateTime     @default(now())
 
-  orders         Order[]
-  purchaseOrders PurchaseOrder[]
+  orders                Order[]
+  purchaseOrders        PurchaseOrder[]
+  employeesWithDefault  Employee[]
 
   @@index([orgId, status])
 }
@@ -580,6 +641,16 @@ model TechCard {
   outputItemId   String
   outputItem     CatalogItem  @relation("TechCardOutput", fields: [outputItemId], references: [id], onDelete: Restrict)
   outputQuantity Decimal      @db.Decimal(12, 3)
+  // Optional flat labor/overhead cost for one outputQuantity batch, scaled by
+  // the same ratio as materials when a ProductionOrder completes — see
+  // lib/production-cost.ts. Deliberately one field, not itemized, matching
+  // the project's existing "simplified, documented" costing precedent (P&L).
+  laborCost      Decimal?     @db.Decimal(12, 2)
+  // Block F2: optional multi-stage TechProcess. Null = single-step (Block F1
+  // flow, completeProductionOrder). Set = multi-stage flow (ProductionStage/
+  // completeProductionStage) — see TechProcess doc comment below.
+  techProcessId  String?
+  techProcess    TechProcess? @relation(fields: [techProcessId], references: [id], onDelete: Restrict)
   status         EntityStatus @default(ACTIVE)
   archivedAt     DateTime?
   createdAt      DateTime     @default(now())
@@ -588,6 +659,7 @@ model TechCard {
   productionOrders ProductionOrder[]
 
   @@index([orgId, status])
+  @@index([techProcessId])
 }
 
 model TechCardComponent {
@@ -600,15 +672,94 @@ model TechCardComponent {
   // actual consumption on a ProductionOrder scales this by
   // (order.quantity / techCard.outputQuantity).
   quantity      Decimal     @db.Decimal(12, 3)
+  // Block F2: which TechProcess position (stage) this material is consumed
+  // at, when the parent TechCard has a techProcessId. Null while the parent
+  // has no techProcess (single-step, unused); null while it DOES have one
+  // means "defaults to the first position" (МойСклад's own rule for an
+  // unassigned material) — resolved in completeProductionStage, not stored
+  // as an explicit FK to keep this column meaningful only in the
+  // multi-stage case.
+  techProcessPositionId String?
+  techProcessPosition   TechProcessPosition? @relation(fields: [techProcessPositionId], references: [id], onDelete: SetNull)
 
   @@unique([techCardId, catalogItemId])
+  @@index([techProcessPositionId])
+}
+
+// Block F2: a reusable named production step (e.g. "Замес", "Выпечка") —
+// a template, not tied to any one TechProcess/TechCard. Analogous to
+// МойСклад's processingstage master record, minus per-stage performer
+// restrictions (allPerformers/performers) — this project reuses the
+// existing whole-order CustomRole.production scope instead of a per-stage
+// ACL, a documented scope cut (see ROADMAP.md Block F2).
+model ProcessingStage {
+  id               String       @id @default(cuid())
+  orgId            String
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name             String
+  standardHourCost Decimal?     @db.Decimal(12, 2)
+  status           EntityStatus @default(ACTIVE)
+  archivedAt       DateTime?
+  createdAt        DateTime     @default(now())
+
+  positions TechProcessPosition[]
+
+  @@index([orgId, status])
+}
+
+// Block F2: a named, ordered sequence of ProcessingStages a TechCard can
+// reference. МойСклад's processingprocess is a DAG (positions branch via
+// nextPositions) — this project deliberately models it as a linear chain
+// (`TechProcessPosition.position`, 0-based) instead: small/mid production is
+// overwhelmingly linear, and a full graph (topological sort, multi-parent
+// availability, cycle checks) is a lot of complexity for little real
+// benefit here. Documented simplification, see ROADMAP.md Block F2.
+model TechProcess {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  status    EntityStatus @default(ACTIVE)
+  archivedAt DateTime?
+  createdAt DateTime     @default(now())
+
+  positions TechProcessPosition[]
+  techCards TechCard[]
+
+  @@index([orgId, status])
+}
+
+// Join row: one ProcessingStage at one ordered position within one
+// TechProcess. `position` is the sole ordering mechanism (linear chain, see
+// TechProcess doc comment) — 0 is the first/only-unblocked-by-default stage.
+model TechProcessPosition {
+  id                String          @id @default(cuid())
+  techProcessId     String
+  techProcess       TechProcess     @relation(fields: [techProcessId], references: [id], onDelete: Cascade)
+  processingStageId String
+  processingStage   ProcessingStage @relation(fields: [processingStageId], references: [id], onDelete: Restrict)
+  position          Int
+
+  techCardComponents TechCardComponent[]
+  productionStages   ProductionStage[]
+
+  @@unique([techProcessId, position])
+  @@index([techProcessId])
 }
 
 // A production run: "make `quantity` units of techCard.outputItem". Status
 // is a normal DocumentStatus workflow (Block C4/K, purely descriptive), kept
-// deliberately independent of stock — the actual atomic consume+produce
-// ledger posting happens once, via completeProductionOrder, guarded by
-// completedAt so it can never double-post.
+// deliberately independent of stock. Two posting flows depending on
+// techCard.techProcessId:
+// - null (Block F1, single-step): the atomic consume+produce ledger posting
+//   happens via completeProductionOrder, guarded by completedAt so it can
+//   never double-post.
+// - set (Block F2, multi-stage): posting happens per ProductionStage via
+//   completeProductionStage; completeProductionOrder refuses to run.
+// materialsStoreId/productsStoreId replaced a single storeId (Block F2) —
+// StockMovement itself needed no changes, since CONSUME and OUTPUT were
+// already two separate movements; each just now reads its store from a
+// different ProductionOrder field.
 model ProductionOrder {
   id                 String         @id @default(cuid())
   orgId              String
@@ -616,9 +767,17 @@ model ProductionOrder {
   number             Int
   techCardId         String
   techCard           TechCard       @relation(fields: [techCardId], references: [id], onDelete: Restrict)
-  storeId            String
-  store              Store          @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  materialsStoreId   String
+  materialsStore     Store          @relation("ProductionMaterialsStore", fields: [materialsStoreId], references: [id], onDelete: Restrict)
+  productsStoreId    String
+  productsStore      Store          @relation("ProductionProductsStore", fields: [productsStoreId], references: [id], onDelete: Restrict)
   quantity           Decimal        @db.Decimal(12, 3)
+  // Cumulative quantity posted so far. For a single-step TechCard, every
+  // completeProductionOrder call increments this directly. For a multi-stage
+  // TechCard, only the LAST stage's completeProductionStage call increments
+  // it (matching МойСклад: products only appear on the final stage).
+  // completedAt is set once this reaches quantity either way.
+  completedQuantity  Decimal        @default(0) @db.Decimal(12, 3)
   assignedEmployeeId String?
   assignedEmployee   Employee?      @relation("AssignedEmployeeProduction", fields: [assignedEmployeeId], references: [id])
   statusId           String
@@ -627,9 +786,54 @@ model ProductionOrder {
   createdAt          DateTime       @default(now())
 
   stockMovements StockMovement[]
+  stages         ProductionStage[]
 
   @@unique([orgId, number])
   @@index([orgId, statusId])
+}
+
+// Block F2: auto-generated (never created/deleted by user action directly) —
+// one row per TechProcessPosition of the TechCard's TechProcess, created
+// when a ProductionOrder for a multi-stage TechCard is made. availableQuantity
+// (how much can be worked right now) and blockedQuantity (how much is still
+// waiting on the preceding stage) are deliberately NOT stored — they're
+// derived at read time from totalQuantity/completedQuantity of this stage and
+// the preceding one (lib/production-stages.ts::computeStageProgress), so
+// there's no denormalized number that can drift out of sync.
+model ProductionStage {
+  id                    String   @id @default(cuid())
+  orgId                 String
+  org                   Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  productionOrderId     String
+  productionOrder       ProductionOrder     @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  techProcessPositionId String
+  techProcessPosition   TechProcessPosition @relation(fields: [techProcessPositionId], references: [id], onDelete: Restrict)
+  // Denormalized copy of techProcessPosition.position, purely so ordering
+  // and "am I the last stage" checks don't need an extra join.
+  position              Int
+  totalQuantity         Decimal  @db.Decimal(12, 3)
+  completedQuantity     Decimal  @default(0) @db.Decimal(12, 3)
+
+  completions ProductionStageCompletion[]
+
+  @@unique([productionOrderId, techProcessPositionId])
+  @@index([productionOrderId, position])
+}
+
+// One partial-completion event against one ProductionStage — mirrors the
+// StockMovement ledger's "immutable, append a correction, don't edit
+// history" principle, at the stage-progress level instead of the stock
+// level.
+model ProductionStageCompletion {
+  id                String          @id @default(cuid())
+  productionStageId String
+  productionStage   ProductionStage @relation(fields: [productionStageId], references: [id], onDelete: Cascade)
+  quantity          Decimal         @db.Decimal(12, 3)
+  employeeId        String?
+  employee          Employee?       @relation(fields: [employeeId], references: [id])
+  createdAt         DateTime        @default(now())
+
+  @@index([productionStageId])
 }
 
 model Order {
@@ -838,6 +1042,7 @@ enum CustomFieldEntityType {
   CATALOG_ITEM
   ORDER
   PURCHASE_ORDER
+  PRODUCTION_ORDER
 }
 
 enum CustomFieldType {
@@ -912,6 +1117,9 @@ enum WebhookEvent {
   PURCHASE_ORDER_CREATED
   PURCHASE_ORDER_STATUS_CHANGED
   PAYMENT_CREATED
+  PRODUCTION_ORDER_CREATED
+  PRODUCTION_ORDER_STATUS_CHANGED
+  PRODUCTION_ORDER_COMPLETED
 }
 
 model Webhook {
@@ -942,22 +1150,36 @@ model WebhookDelivery {
   @@index([webhookId, createdAt])
 }
 
-// --- Block I: flexible permissions ----------------------------------------
-// A per-org reusable role (МойСклад's customrole) whose `permissions` JSON
-// fully REPLACES the enum-based matrix in lib/permissions.ts for any
-// Membership it's assigned to (not merged with the base Role) — see
-// notes/ROADMAP.md Block I. Scoped down from the researched МойСклад model:
-// only `ALL | OWN` (no OWN_GROUP — no department/group entity exists yet)
-// and only meaningful for the "orders" resource (assignedEmployeeId is the
-// only resource with a natural per-employee owner right now).
+// --- Block I/I2.1: flexible permissions ------------------------------------
+// A per-org reusable role (МойСклад's customrole). Once assigned to a
+// Membership, `permissions` (Record<Resource, ResourcePermission> — see
+// lib/permissions.ts) becomes the AUTHORITATIVE source for that membership's
+// access on every resource it explicitly configures: it can grant OR
+// restrict relative to the base Role, not merely narrow it (see
+// resolveCapabilities() in lib/permissions.ts). Any resource NOT present in
+// `permissions` falls back to that membership's base Role's own default from
+// CAPABILITIES — so an admin doesn't have to touch every row just to keep
+// sane defaults for resources they don't care about. Two resources —
+// "membership" and "customRoles" — are deliberately NEVER overridable via
+// this JSON (NON_OVERRIDABLE_RESOURCES in lib/permissions.ts): who can grant
+// logins/roles or edit permission tables always comes from the base Role
+// table only, closing the obvious self-escalation loop. `permissions` also
+// carries a `version` discriminator; rows written before Block I2.1 lack it
+// and are transparently upgraded on read by parseCustomRolePermissions().
 model CustomRole {
   id          String   @id @default(cuid())
   orgId       String
   org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name        String
-  // Record<Resource, { access: Access; scope?: "ALL" | "OWN" }> — see
-  // lib/permissions.ts for the shape this is parsed into.
   permissions Json
+  // Block I2.1 (МойСклад "индивидуальные настройки"): true for a hidden,
+  // single-membership role auto-created by the "individual settings" toggle
+  // on an employee's Access card, as opposed to a named, reusable role an
+  // admin created via /settings/roles. `name` for these rows is an internal
+  // key ("__individual__<employeeId>"), never shown directly — excluded from
+  // CustomRolesManager's list and from every other employee's
+  // customRoleOptions dropdown.
+  isIndividual Boolean @default(false)
   createdAt   DateTime @default(now())
 
   memberships Membership[]

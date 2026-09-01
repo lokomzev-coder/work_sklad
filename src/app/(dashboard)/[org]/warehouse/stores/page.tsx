@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -22,7 +23,8 @@ export default async function StoresPage({
   const { org } = await params;
   const { status } = await searchParams;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "warehouse", "edit");
+  if (!can(ctx, "warehouse", "view")) notFound();
+  const canEdit = can(ctx, "warehouse", "edit");
 
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";

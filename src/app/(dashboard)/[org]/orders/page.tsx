@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { buildScopeWhere } from "@/lib/scope";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -27,14 +29,14 @@ export default async function OrdersPage({
   const { org } = await params;
   const { channel } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "orders", "view")) notFound();
 
+  const scopeWhere = await buildScopeWhere(ctx, "orders");
   const [orders, salesChannels] = await Promise.all([
     prisma.order.findMany({
       where: {
         orgId: ctx.orgId,
-        // Block I: an OWN-scoped custom role only sees orders assigned to
-        // their own Employee record.
-        ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
+        ...scopeWhere,
         ...(channel ? { salesChannelId: channel } : {}),
       },
       orderBy: { number: "desc" },
@@ -43,14 +45,14 @@ export default async function OrdersPage({
     prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
   ]);
 
-  const canEdit = can(ctx.role, "orders", "edit");
+  const canCreate = can(ctx, "orders", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <OrdersSubnav org={org} active="orders" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказы</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/orders/new`} />}>
             Новый заказ
           </Button>

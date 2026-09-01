@@ -25,7 +25,7 @@ export async function createContract(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "contracts", "create");
 
   const parsed = parseForm(formData);
   if (!parsed.success) {
@@ -54,7 +54,7 @@ export async function createContract(
 
 export async function deleteContract(orgSlug: string, contractId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "contracts", "delete");
 
   const [orderCount, poCount] = await Promise.all([
     prisma.order.count({ where: { contractId, orgId: ctx.orgId } }),

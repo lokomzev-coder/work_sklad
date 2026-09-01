@@ -24,7 +24,7 @@ export async function createUnit(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "create");
 
   const parsed = parseUnitForm(formData);
   if (!parsed.success) {
@@ -48,7 +48,7 @@ export async function updateUnit(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   const parsed = parseUnitForm(formData);
   if (!parsed.success) {
@@ -70,7 +70,7 @@ export async function updateUnit(
 
 export async function deleteUnit(orgSlug: string, unitId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "delete");
 
   const usageCount = await prisma.catalogItem.count({
     where: { unitId, orgId: ctx.orgId },

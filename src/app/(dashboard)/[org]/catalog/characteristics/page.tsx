@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -22,7 +23,8 @@ export default async function CharacteristicsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "catalog", "edit");
+  if (!can(ctx, "catalog", "view")) notFound();
+  const canEdit = can(ctx, "catalog", "edit");
 
   const characteristics = await prisma.characteristic.findMany({
     where: { orgId: ctx.orgId },

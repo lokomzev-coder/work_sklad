@@ -13,7 +13,7 @@ export default async function EditLegalEntityPage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "edit")) notFound();
+  if (!can(ctx, "legalEntities", "edit")) notFound();
 
   const legalEntity = await prisma.legalEntity.findFirst({
     where: { id, orgId: ctx.orgId },

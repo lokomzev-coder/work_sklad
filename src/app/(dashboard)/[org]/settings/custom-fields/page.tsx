@@ -5,11 +5,15 @@ import { listCustomFieldDefinitions } from "@/lib/custom-fields";
 import { SettingsSubnav } from "@/components/settings/settings-subnav";
 import { CustomFieldDefinitionsManager } from "@/components/settings/custom-field-definitions-manager";
 
-const SECTIONS: { entityType: "CLIENT" | "CATALOG_ITEM" | "ORDER" | "PURCHASE_ORDER"; label: string }[] = [
+const SECTIONS: {
+  entityType: "CLIENT" | "CATALOG_ITEM" | "ORDER" | "PURCHASE_ORDER" | "PRODUCTION_ORDER";
+  label: string;
+}[] = [
   { entityType: "CLIENT", label: "Клиенты" },
   { entityType: "CATALOG_ITEM", label: "Товары и услуги" },
   { entityType: "ORDER", label: "Заказы" },
   { entityType: "PURCHASE_ORDER", label: "Заказы поставщику" },
+  { entityType: "PRODUCTION_ORDER", label: "Производственные задания" },
 ];
 
 export default async function CustomFieldsPage({
@@ -19,7 +23,7 @@ export default async function CustomFieldsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "read")) notFound();
+  if (!can(ctx, "customFields", "view")) notFound();
 
   const defsBySection = await Promise.all(
     SECTIONS.map((s) => listCustomFieldDefinitions(ctx.orgId, s.entityType)),

@@ -17,7 +17,7 @@ const rateSchema = z.object({
 
 export async function setBaseCurrency(orgSlug: string, currency: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "exchangeRates", "edit");
 
   const trimmed = currency.trim().toUpperCase();
   if (!trimmed) return;
@@ -36,7 +36,7 @@ export async function createExchangeRate(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "exchangeRates", "create");
 
   const parsed = rateSchema.safeParse({
     currency: formData.get("currency"),
@@ -64,7 +64,7 @@ export async function createExchangeRate(
 
 export async function deleteExchangeRate(orgSlug: string, rateId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "exchangeRates", "delete");
 
   await prisma.exchangeRate.delete({ where: { id: rateId, orgId: ctx.orgId } });
 

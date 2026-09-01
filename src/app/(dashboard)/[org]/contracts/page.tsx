@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -21,7 +22,9 @@ export default async function ContractsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "orders", "edit");
+  if (!can(ctx, "contracts", "view")) notFound();
+  const canCreate = can(ctx, "contracts", "create");
+  const canDelete = can(ctx, "contracts", "delete");
 
   const contracts = await prisma.contract.findMany({
     where: { orgId: ctx.orgId },
@@ -33,7 +36,7 @@ export default async function ContractsPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Договоры</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/contracts/new`} />}>Новый договор</Button>
         )}
       </div>
@@ -45,13 +48,13 @@ export default async function ContractsPage({
               <TableHead>Номер</TableHead>
               <TableHead>Контрагент</TableHead>
               <TableHead>Дата подписания</TableHead>
-              {canEdit && <TableHead className="w-0" />}
+              {canDelete && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {contracts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 4 : 3} className="text-center text-muted-foreground">
+                <TableCell colSpan={canDelete ? 4 : 3} className="text-center text-muted-foreground">
                   Договоров пока нет
                 </TableCell>
               </TableRow>
@@ -61,7 +64,7 @@ export default async function ContractsPage({
                   <TableCell>{c.number}</TableCell>
                   <TableCell>{c.client.name}</TableCell>
                   <TableCell>{c.signedAt ? c.signedAt.toLocaleDateString("ru-RU") : "—"}</TableCell>
-                  {canEdit && (
+                  {canDelete && (
                     <TableCell className="text-right">
                       <SimpleDeleteButton
                         onDelete={deleteContract.bind(null, org, c.id)}

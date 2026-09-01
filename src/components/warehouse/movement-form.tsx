@@ -28,6 +28,9 @@ interface MovementFormProps {
   /** storeId -> catalogItemId -> current balance, used to show a live
    * reference next to the "actual count" input on inventory documents. */
   balances: Record<string, Record<string, number>>;
+  /** Block I2.2: pre-fills the source store with the acting employee's
+   * default store, if they have one — just a convenience, still changeable. */
+  defaultStoreId?: string | null;
 }
 
 const TITLE: Record<ManualMovementType, string> = {
@@ -47,11 +50,12 @@ export function MovementForm({
   storeOptions,
   catalogOptions,
   balances,
+  defaultStoreId = null,
 }: MovementFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [storeId, setStoreId] = useState<string | null>(null);
+  const [storeId, setStoreId] = useState<string | null>(defaultStoreId);
   const [toStoreId, setToStoreId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [rows, setRows] = useState<LineRow[]>([newRow()]);

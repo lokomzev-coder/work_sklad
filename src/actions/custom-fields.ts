@@ -24,7 +24,7 @@ export async function createCustomFieldDefinition(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "customFields", "create");
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
@@ -66,7 +66,7 @@ export async function createCustomFieldDefinition(
 
 export async function deleteCustomFieldDefinition(orgSlug: string, definitionId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "customFields", "delete");
 
   await prisma.customFieldDefinition.delete({ where: { id: definitionId, orgId: ctx.orgId } });
 

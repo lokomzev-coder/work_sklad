@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -22,7 +23,9 @@ export default async function SalesChannelsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "orders", "edit");
+  if (!can(ctx, "salesChannels", "view")) notFound();
+  const canCreate = can(ctx, "salesChannels", "create");
+  const canDelete = can(ctx, "salesChannels", "delete");
 
   const channels = await prisma.salesChannel.findMany({
     where: { orgId: ctx.orgId },
@@ -34,7 +37,7 @@ export default async function SalesChannelsPage({
       <OrdersSubnav org={org} active="channels" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Каналы продаж</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/orders/channels/new`} />}>
             Добавить
           </Button>
@@ -46,13 +49,13 @@ export default async function SalesChannelsPage({
           <TableHeader>
             <TableRow>
               <TableHead>Название</TableHead>
-              {canEdit && <TableHead className="w-0" />}
+              {canDelete && <TableHead className="w-0" />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {channels.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={canEdit ? 2 : 1} className="text-center text-muted-foreground">
+                <TableCell colSpan={canDelete ? 2 : 1} className="text-center text-muted-foreground">
                   Каналы продаж ещё не добавлены
                 </TableCell>
               </TableRow>
@@ -60,7 +63,7 @@ export default async function SalesChannelsPage({
               channels.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell>{c.name}</TableCell>
-                  {canEdit && (
+                  {canDelete && (
                     <TableCell className="text-right">
                       <SimpleDeleteButton
                         onDelete={deleteSalesChannel.bind(null, org, c.id)}

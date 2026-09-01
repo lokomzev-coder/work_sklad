@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { createClient } from "@/actions/clients";
 import { ClientForm } from "@/components/clients/client-form";
 import { listCustomFieldDefinitions } from "@/lib/custom-fields";
@@ -10,6 +12,7 @@ export default async function NewClientPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "clients", "create")) notFound();
   const boundAction = createClient.bind(null, org);
   const customFieldDefs = await listCustomFieldDefinitions(ctx.orgId, "CLIENT");
 

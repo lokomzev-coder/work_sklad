@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { buildScopeWhere } from "@/lib/scope";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -22,25 +24,22 @@ export default async function PurchaseOrdersPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "purchaseOrders", "view")) notFound();
 
+  const scopeWhere = await buildScopeWhere(ctx, "purchaseOrders");
   const purchaseOrders = await prisma.purchaseOrder.findMany({
-    where: {
-      orgId: ctx.orgId,
-      // Block I: an OWN-scoped custom role only sees purchase orders
-      // assigned to their own Employee record.
-      ...(ctx.purchaseOrderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
-    },
+    where: { orgId: ctx.orgId, ...scopeWhere },
     orderBy: { number: "desc" },
     include: { supplier: true, lineItems: true, status: true },
   });
 
-  const canEdit = can(ctx.role, "orders", "edit");
+  const canCreate = can(ctx, "purchaseOrders", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказы поставщику</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/purchase-orders/new`} />}>
             Новый заказ
           </Button>

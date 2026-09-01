@@ -12,7 +12,7 @@ export default async function NewVaultEntryPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  if (!can(ctx.role, "vault", "edit")) {
+  if (!can(ctx, "vault", "create")) {
     notFound();
   }
 

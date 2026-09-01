@@ -55,7 +55,7 @@ export async function createDemand(
   input: FulfillmentInput,
 ): Promise<FulfillmentResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = fulfillmentSchema.safeParse(input);
   if (!parsed.success) {
@@ -142,7 +142,7 @@ export async function createSupply(
   input: FulfillmentInput,
 ): Promise<FulfillmentResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = fulfillmentSchema.safeParse(input);
   if (!parsed.success) {
@@ -229,7 +229,7 @@ export async function createSalesReturn(
   input: FulfillmentInput,
 ): Promise<FulfillmentResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = fulfillmentSchema.safeParse(input);
   if (!parsed.success) {
@@ -317,7 +317,7 @@ export async function createPurchaseReturn(
   input: FulfillmentInput,
 ): Promise<FulfillmentResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = fulfillmentSchema.safeParse(input);
   if (!parsed.success) {

@@ -11,13 +11,18 @@ export default async function EditTechCardPage({
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
 
-  const [techCard, products] = await Promise.all([
+  const [techCard, products, techProcesses] = await Promise.all([
     prisma.techCard.findFirst({
       where: { id, orgId: ctx.orgId },
       include: { components: true },
     }),
     prisma.catalogItem.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE", type: "PRODUCT" },
+      orderBy: { name: "asc" },
+    }),
+    prisma.techProcess.findMany({
+      where: { orgId: ctx.orgId, status: "ACTIVE" },
+      include: { positions: { include: { processingStage: true }, orderBy: { position: "asc" } } },
       orderBy: { name: "asc" },
     }),
   ]);
@@ -30,13 +35,21 @@ export default async function EditTechCardPage({
         orgSlug={org}
         techCardId={techCard.id}
         productOptions={products.map((p) => ({ value: p.id, label: p.name }))}
+        techProcesses={techProcesses.map((tp) => ({
+          id: tp.id,
+          name: tp.name,
+          positions: tp.positions.map((p) => ({ id: p.id, stageName: p.processingStage.name })),
+        }))}
         defaultValues={{
           name: techCard.name,
           outputItemId: techCard.outputItemId,
           outputQuantity: techCard.outputQuantity.toString(),
+          laborCost: techCard.laborCost?.toString() ?? "",
+          techProcessId: techCard.techProcessId,
           components: techCard.components.map((c) => ({
             catalogItemId: c.catalogItemId,
             quantity: c.quantity.toString(),
+            techProcessPositionId: c.techProcessPositionId,
           })),
         }}
       />

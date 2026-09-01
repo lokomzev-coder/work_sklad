@@ -1,5 +1,8 @@
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { listCustomFieldDefinitions } from "@/lib/custom-fields";
 import { ProductionOrderForm } from "@/components/production/production-order-form";
 
 export default async function NewProductionOrderPage({
@@ -9,8 +12,9 @@ export default async function NewProductionOrderPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "productionOrders", "create")) notFound();
 
-  const [techCards, stores, employees] = await Promise.all([
+  const [techCards, stores, employees, customFieldDefs] = await Promise.all([
     prisma.techCard.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       include: { outputItem: true },
@@ -18,6 +22,7 @@ export default async function NewProductionOrderPage({
     }),
     prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
     prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
+    listCustomFieldDefinitions(ctx.orgId, "PRODUCTION_ORDER"),
   ]);
 
   return (
@@ -28,7 +33,9 @@ export default async function NewProductionOrderPage({
         productionOrderId={null}
         techCardOptions={techCards.map((t) => ({ value: t.id, label: `${t.name} → ${t.outputItem.name}` }))}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        defaultStoreId={ctx.defaultStoreId}
         employeeOptions={employees.map((e) => ({ value: e.id, label: e.fullName }))}
+        customFieldDefs={customFieldDefs}
       />
     </div>
   );

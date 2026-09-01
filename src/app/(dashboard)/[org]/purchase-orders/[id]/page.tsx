@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { isRowVisible } from "@/lib/scope";
 import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-form";
 import { PurchaseOrderStatusSelect } from "@/components/purchase-orders/purchase-order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
@@ -15,6 +17,7 @@ export default async function EditPurchaseOrderPage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "purchaseOrders", "view")) notFound();
 
   const purchaseOrder = await prisma.purchaseOrder.findFirst({
     where: { id, orgId: ctx.orgId },
@@ -24,7 +27,7 @@ export default async function EditPurchaseOrderPage({
   if (!purchaseOrder) {
     notFound();
   }
-  if (ctx.purchaseOrderScope === "OWN" && purchaseOrder.assignedEmployeeId !== ctx.employeeId) {
+  if (!(await isRowVisible(ctx, "purchaseOrders", purchaseOrder.assignedEmployeeId))) {
     notFound();
   }
 
@@ -154,6 +157,7 @@ export default async function EditPurchaseOrderPage({
         kind="supply"
         parentId={purchaseOrder.id}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        defaultStoreId={ctx.defaultStoreId}
         lines={purchaseOrder.lineItems
           .filter((li) => catalogItemsById.get(li.catalogItemId)?.type === "PRODUCT")
           .map((li) => ({
@@ -175,6 +179,7 @@ export default async function EditPurchaseOrderPage({
         kind="purchaseReturn"
         parentId={purchaseOrder.id}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        defaultStoreId={ctx.defaultStoreId}
         lines={[...receivedByItem.keys()].map((catalogItemId) => ({
           catalogItemId,
           name: catalogItemsById.get(catalogItemId)?.name ?? "—",

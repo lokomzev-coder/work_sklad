@@ -24,6 +24,9 @@ const EVENT_LABELS: Record<WebhookEvent, string> = {
   PURCHASE_ORDER_CREATED: "Заказ поставщику создан",
   PURCHASE_ORDER_STATUS_CHANGED: "Статус заказа поставщику изменён",
   PAYMENT_CREATED: "Платёж создан",
+  PRODUCTION_ORDER_CREATED: "Производственное задание создано",
+  PRODUCTION_ORDER_STATUS_CHANGED: "Статус производственного задания изменён",
+  PRODUCTION_ORDER_COMPLETED: "Производство выполнено (полностью или частично)",
 };
 
 interface WebhookRow {

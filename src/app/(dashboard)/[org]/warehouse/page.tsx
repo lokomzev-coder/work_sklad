@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -38,7 +39,8 @@ export default async function WarehouseMovementsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "warehouse", "edit");
+  if (!can(ctx, "warehouse", "view")) notFound();
+  const canCreate = can(ctx, "warehouse", "create");
 
   const movements = await prisma.stockMovement.findMany({
     where: { orgId: ctx.orgId },
@@ -52,7 +54,7 @@ export default async function WarehouseMovementsPage({
       <WarehouseSubnav org={org} active="movements" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Складские движения</h1>
-        {canEdit && (
+        {canCreate && (
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button>Новое движение</Button>} />
             <DropdownMenuContent align="end">

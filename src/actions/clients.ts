@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertRowScope } from "@/lib/scope";
 import { clientSchema } from "@/lib/validation/client";
 import { archiveOrDelete } from "@/lib/archive";
 import { saveCustomFieldValues } from "@/lib/custom-fields";
@@ -26,7 +27,7 @@ export async function quickCreateClient(
   input: { name: string; phone?: string; email?: string },
 ): Promise<QuickCreateClientResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "create");
 
   const parsed = clientSchema.pick({ name: true, phone: true, email: true }).safeParse(input);
   if (!parsed.success) {
@@ -34,7 +35,7 @@ export async function quickCreateClient(
   }
 
   const client = await prisma.client.create({
-    data: { ...parsed.data, orgId: ctx.orgId },
+    data: { ...parsed.data, orgId: ctx.orgId, assignedEmployeeId: ctx.employeeId },
   });
 
   revalidatePath(`/${orgSlug}/clients`);
@@ -62,7 +63,7 @@ export async function createClient(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "create");
 
   const parsed = parseClientForm(formData);
   if (!parsed.success) {
@@ -70,7 +71,7 @@ export async function createClient(
   }
 
   const client = await prisma.client.create({
-    data: { ...parsed.data, orgId: ctx.orgId },
+    data: { ...parsed.data, orgId: ctx.orgId, assignedEmployeeId: ctx.employeeId },
   });
   await saveCustomFieldValues(ctx.orgId, "CLIENT", client.id, formData);
 
@@ -85,7 +86,8 @@ export async function updateClient(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "edit");
+  await assertRowScope(ctx, "clients", clientId);
 
   const parsed = parseClientForm(formData);
   if (!parsed.success) {
@@ -104,7 +106,8 @@ export async function updateClient(
 
 export async function archiveClient(orgSlug: string, clientId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "edit");
+  await assertRowScope(ctx, "clients", clientId);
 
   await prisma.client.update({
     where: { id: clientId, orgId: ctx.orgId },
@@ -116,7 +119,8 @@ export async function archiveClient(orgSlug: string, clientId: string) {
 
 export async function restoreClient(orgSlug: string, clientId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "edit");
+  await assertRowScope(ctx, "clients", clientId);
 
   await prisma.client.update({
     where: { id: clientId, orgId: ctx.orgId },
@@ -128,7 +132,8 @@ export async function restoreClient(orgSlug: string, clientId: string) {
 
 export async function deleteClient(orgSlug: string, clientId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "clients", "edit");
+  assertPermission(ctx, "clients", "delete");
+  await assertRowScope(ctx, "clients", clientId);
 
   const result = await archiveOrDelete("client", clientId, ctx.orgId);
 

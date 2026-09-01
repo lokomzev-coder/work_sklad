@@ -29,7 +29,7 @@ export async function createVaultEntry(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "create");
 
   const parsed = parseVaultEntryForm(formData);
   if (!parsed.success) {
@@ -59,7 +59,7 @@ export async function updateVaultEntry(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "edit");
 
   const parsed = parseVaultEntryForm(formData);
   if (!parsed.success) {
@@ -88,7 +88,7 @@ export async function updateVaultEntry(
 
 export async function archiveVaultEntry(orgSlug: string, entryId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "edit");
 
   await prisma.vaultServiceEntry.update({
     where: { id: entryId, orgId: ctx.orgId },
@@ -100,7 +100,7 @@ export async function archiveVaultEntry(orgSlug: string, entryId: string) {
 
 export async function restoreVaultEntry(orgSlug: string, entryId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "edit");
 
   await prisma.vaultServiceEntry.update({
     where: { id: entryId, orgId: ctx.orgId },
@@ -115,7 +115,7 @@ export async function deleteVaultEntry(
   entryId: string,
 ): Promise<ArchiveOrDeleteResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "delete");
 
   const result = await archiveOrDelete("vaultServiceEntry", entryId, ctx.orgId);
 
@@ -129,7 +129,7 @@ export async function grantVaultAccess(
   employeeId: string,
 ) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "create");
 
   const employee = await prisma.employee.findFirstOrThrow({
     where: { id: employeeId, orgId: ctx.orgId },
@@ -169,7 +169,7 @@ export async function revokeVaultAccess(
   employeeId: string,
 ) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "edit");
+  assertPermission(ctx, "vault", "delete");
 
   const employee = await prisma.employee.findFirst({
     where: { id: employeeId, orgId: ctx.orgId },
@@ -205,7 +205,7 @@ export async function revealVaultSecret(
   entryId: string,
 ): Promise<RevealSecretResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "vault", "read");
+  assertPermission(ctx, "vault", "view");
 
   const entry = await prisma.vaultServiceEntry.findFirst({
     where: { id: entryId, orgId: ctx.orgId },

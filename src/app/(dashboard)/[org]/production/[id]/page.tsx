@@ -1,11 +1,18 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { isRowVisible } from "@/lib/scope";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { getStockBalances } from "@/lib/stock";
+import { computeStageProgress } from "@/lib/production-stages";
+import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 import { ProductionOrderForm } from "@/components/production/production-order-form";
 import { ProductionOrderStatusSelect } from "@/components/production/production-order-status-select";
 import { ProductionOrderCompletePanel } from "@/components/production/production-order-complete-panel";
+import { ProductionStagesPanel } from "@/components/production/production-stages-panel";
+import { ProductionOrderHistory } from "@/components/production/production-order-history";
+import { PrintButton } from "@/components/print/print-button";
 
 export default async function ProductionOrderDetailPage({
   params,
@@ -14,39 +21,106 @@ export default async function ProductionOrderDetailPage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "productionOrders", "view")) notFound();
 
   const productionOrder = await prisma.productionOrder.findFirst({
     where: { id, orgId: ctx.orgId },
     include: {
-      techCard: { include: { outputItem: true, components: { include: { catalogItem: true } } } },
-      store: true,
+      techCard: {
+        include: {
+          outputItem: true,
+          components: { include: { catalogItem: true } },
+          techProcess: true,
+        },
+      },
+      materialsStore: true,
+      productsStore: true,
       assignedEmployee: true,
     },
   });
   if (!productionOrder) notFound();
+  if (!(await isRowVisible(ctx, "productionOrders", productionOrder.assignedEmployeeId))) {
+    notFound();
+  }
 
-  const [techCards, stores, employees, statusOptions, balances] = await Promise.all([
-    prisma.techCard.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      include: { outputItem: true },
-      orderBy: { name: "asc" },
-    }),
-    prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
-    getSelectableStatuses(ctx.orgId, "PRODUCTION_ORDER", productionOrder.statusId, {
-      role: ctx.role,
-      customRoleId: ctx.customRoleId,
-      employeeId: ctx.employeeId,
-    }),
-    getStockBalances(ctx.orgId, { storeId: productionOrder.storeId }),
-  ]);
+  const isStaged = !!productionOrder.techCard.techProcessId;
 
-  const balanceByItem = new Map(balances.map((b) => [b.catalogItemId, Number(b.quantity)]));
-  const ratio = Number(productionOrder.quantity) / Number(productionOrder.techCard.outputQuantity);
-  const materials = productionOrder.techCard.components.map((c) => ({
+  const [techCards, stores, employees, statusOptions, materialsBalances, customFieldDefs, customFieldValues, movements, stages] =
+    await Promise.all([
+      prisma.techCard.findMany({
+        where: { orgId: ctx.orgId, status: "ACTIVE" },
+        include: { outputItem: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
+      getSelectableStatuses(ctx.orgId, "PRODUCTION_ORDER", productionOrder.statusId, {
+        role: ctx.role,
+        customRoleId: ctx.customRoleId,
+        employeeId: ctx.employeeId,
+      }),
+      getStockBalances(ctx.orgId, { storeId: productionOrder.materialsStoreId }),
+      listCustomFieldDefinitions(ctx.orgId, "PRODUCTION_ORDER"),
+      getCustomFieldValues(productionOrder.id),
+      prisma.stockMovement.findMany({
+        where: { productionOrderId: productionOrder.id },
+        include: { lines: { include: { catalogItem: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
+      isStaged
+        ? prisma.productionStage.findMany({
+            where: { productionOrderId: productionOrder.id },
+            include: { techProcessPosition: { include: { processingStage: true } } },
+            orderBy: { position: "asc" },
+          })
+        : Promise.resolve([]),
+    ]);
+
+  const balanceByItem = new Map(materialsBalances.map((b) => [b.catalogItemId, Number(b.quantity)]));
+  const outputQuantity = Number(productionOrder.techCard.outputQuantity);
+
+  const completedQuantity = Number(productionOrder.completedQuantity);
+  const isFullyCompleted = !!productionOrder.completedAt;
+  const isInProgress = !isFullyCompleted && (isStaged ? stages.some((s) => Number(s.completedQuantity) > 0) : completedQuantity > 0);
+
+  const stageRows = stages.map((stage) => {
+    const stagePosition = stage.position;
+    const preceding = stages.find((s) => s.position === stagePosition - 1) ?? null;
+    const maxPosition = Math.max(...stages.map((s) => s.position));
+    const progress = computeStageProgress(
+      { totalQuantity: Number(stage.totalQuantity), completedQuantity: Number(stage.completedQuantity), position: stagePosition },
+      preceding ? { completedQuantity: Number(preceding.completedQuantity) } : null,
+      maxPosition,
+    );
+    const materials = productionOrder.techCard.components
+      .filter(
+        (c) =>
+          c.techProcessPositionId === stage.techProcessPositionId ||
+          (c.techProcessPositionId === null && stagePosition === 0),
+      )
+      .map((c) => ({
+        catalogItemId: c.catalogItemId,
+        name: c.catalogItem.name,
+        neededPerUnit: Number(c.quantity) / outputQuantity,
+        available: balanceByItem.get(c.catalogItemId) ?? 0,
+      }));
+    return {
+      id: stage.id,
+      stageName: stage.techProcessPosition.processingStage.name,
+      position: stagePosition,
+      totalQuantity: progress.totalQuantity,
+      completedQuantity: progress.completedQuantity,
+      availableQuantity: progress.availableQuantity,
+      blockedQuantity: progress.blockedQuantity,
+      isLast: progress.isLast,
+      materials,
+    };
+  });
+
+  const flatComponents = productionOrder.techCard.components.map((c) => ({
     catalogItemId: c.catalogItemId,
     name: c.catalogItem.name,
-    needed: Number(c.quantity) * ratio,
+    neededPerUnit: Number(c.quantity) / outputQuantity,
     available: balanceByItem.get(c.catalogItemId) ?? 0,
   }));
 
@@ -54,20 +128,29 @@ export default async function ProductionOrderDetailPage({
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Задание №{productionOrder.number}</h1>
-        <ProductionOrderStatusSelect
-          orgSlug={org}
-          productionOrderId={productionOrder.id}
-          statusId={productionOrder.statusId}
-          statusOptions={statusOptions}
-        />
+        <div className="flex items-center gap-2">
+          <PrintButton href={`/print/production-orders/${org}/${productionOrder.id}`} />
+          <ProductionOrderStatusSelect
+            orgSlug={org}
+            productionOrderId={productionOrder.id}
+            statusId={productionOrder.statusId}
+            statusOptions={statusOptions}
+          />
+        </div>
       </div>
 
-      {productionOrder.completedAt ? (
+      {isFullyCompleted ? (
         <div className="rounded-md border p-4 text-sm">
           <p>Техкарта: {productionOrder.techCard.name}</p>
-          <p>Склад: {productionOrder.store.name}</p>
+          <p>Склад материалов: {productionOrder.materialsStore.name}</p>
+          <p>Склад продукции: {productionOrder.productsStore.name}</p>
           <p>Количество: {productionOrder.quantity.toString()}</p>
           <p>Сотрудник: {productionOrder.assignedEmployee?.fullName ?? "—"}</p>
+          {customFieldDefs.map((def) => (
+            <p key={def.id}>
+              {def.name}: {customFieldValues[def.id] || "—"}
+            </p>
+          ))}
         </div>
       ) : (
         <ProductionOrderForm
@@ -76,23 +159,39 @@ export default async function ProductionOrderDetailPage({
           techCardOptions={techCards.map((t) => ({ value: t.id, label: `${t.name} → ${t.outputItem.name}` }))}
           storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
           employeeOptions={employees.map((e) => ({ value: e.id, label: e.fullName }))}
+          locked={isInProgress}
+          customFieldDefs={customFieldDefs}
           defaultValues={{
             techCardId: productionOrder.techCardId,
-            storeId: productionOrder.storeId,
+            materialsStoreId: productionOrder.materialsStoreId,
+            productsStoreId: productionOrder.productsStoreId,
             quantity: productionOrder.quantity.toString(),
             assignedEmployeeId: productionOrder.assignedEmployeeId,
+            customFieldValues,
           }}
         />
       )}
 
-      <ProductionOrderCompletePanel
-        orgSlug={org}
-        productionOrderId={productionOrder.id}
-        outputName={productionOrder.techCard.outputItem.name}
-        outputQuantity={Number(productionOrder.quantity)}
-        materials={materials}
-        completedAt={productionOrder.completedAt ? productionOrder.completedAt.toISOString() : null}
-      />
+      {isStaged ? (
+        <ProductionStagesPanel
+          orgSlug={org}
+          outputName={productionOrder.techCard.outputItem.name}
+          stages={stageRows}
+          orderCompletedAt={productionOrder.completedAt ? productionOrder.completedAt.toISOString() : null}
+        />
+      ) : (
+        <ProductionOrderCompletePanel
+          orgSlug={org}
+          productionOrderId={productionOrder.id}
+          outputName={productionOrder.techCard.outputItem.name}
+          totalQuantity={Number(productionOrder.quantity)}
+          completedQuantity={completedQuantity}
+          components={flatComponents}
+          completedAt={productionOrder.completedAt ? productionOrder.completedAt.toISOString() : null}
+        />
+      )}
+
+      {movements.length > 0 && <ProductionOrderHistory movements={movements} />}
     </div>
   );
 }

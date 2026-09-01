@@ -24,7 +24,7 @@ export async function createDocumentStatus(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "create");
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),
@@ -56,7 +56,7 @@ export async function createDocumentStatus(
 
 export async function renameDocumentStatus(orgSlug: string, statusId: string, name: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "edit");
 
   const trimmed = name.trim();
   if (!trimmed) return { error: "Введите название" };
@@ -72,7 +72,7 @@ export async function renameDocumentStatus(orgSlug: string, statusId: string, na
 
 export async function toggleFinalStatus(orgSlug: string, statusId: string, isFinal: boolean) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "edit");
 
   await prisma.documentStatus.update({
     where: { id: statusId, orgId: ctx.orgId },
@@ -84,7 +84,7 @@ export async function toggleFinalStatus(orgSlug: string, statusId: string, isFin
 
 export async function moveDocumentStatus(orgSlug: string, statusId: string, direction: "up" | "down") {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "edit");
 
   const status = await prisma.documentStatus.findFirst({
     where: { id: statusId, orgId: ctx.orgId },
@@ -115,7 +115,7 @@ export interface DeleteStatusResult {
 
 export async function deleteDocumentStatus(orgSlug: string, statusId: string): Promise<DeleteStatusResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "documentStatuses", "delete");
 
   const status = await prisma.documentStatus.findFirst({ where: { id: statusId, orgId: ctx.orgId } });
   if (!status) return { error: "Статус не найден" };

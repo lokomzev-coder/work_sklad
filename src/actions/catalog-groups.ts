@@ -55,7 +55,7 @@ export async function createCatalogGroup(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "create");
 
   const parsed = parseGroupForm(formData);
   if (!parsed.success) {
@@ -80,7 +80,7 @@ export async function updateCatalogGroup(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "edit");
 
   const parsed = parseGroupForm(formData);
   if (!parsed.success) {
@@ -108,7 +108,7 @@ export async function updateCatalogGroup(
 
 export async function deleteCatalogGroup(orgSlug: string, groupId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "delete");
 
   const [childCount, itemCount] = await Promise.all([
     prisma.catalogGroup.count({ where: { parentId: groupId, orgId: ctx.orgId } }),

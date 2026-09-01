@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getOverviewReport } from "@/lib/reports";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ReportsSubnav } from "@/components/reports/reports-subnav";
@@ -21,6 +23,7 @@ export default async function ReportsOverviewPage({
   const { org } = await params;
   const { from, to } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "reports", "view")) notFound();
 
   const report = await getOverviewReport(ctx.orgId, {
     from: from ? new Date(from) : undefined,

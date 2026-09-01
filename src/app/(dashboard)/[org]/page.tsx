@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Users, Contact, Package, ShoppingCart, DollarSign } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { buildScopeWhere, resolveGroupMemberIds } from "@/lib/scope";
 import { getOrgBaseCurrency } from "@/lib/currency";
 import { formatMoney } from "@/lib/format";
 import { statusBadgeClass } from "@/lib/status-color";
@@ -28,14 +31,22 @@ export default async function OrgDashboardPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "dashboard", "view")) notFound();
 
-  // Block I: an OWN-scoped custom role only sees/counts/sums orders assigned
-  // to their own Employee record — same rule as the /orders list page,
-  // applied here too so the dashboard doesn't leak other employees' orders.
-  const ordersWhere = {
-    orgId: ctx.orgId,
-    ...(ctx.orderScope === "OWN" ? { assignedEmployeeId: ctx.employeeId } : {}),
-  };
+  // Block I2.1: a scoped custom role only sees/counts/sums orders assigned
+  // to them (OWN) or their department (OWN_GROUP) — same rule as the
+  // /orders list page, applied here too so the dashboard doesn't leak other
+  // employees' orders.
+  const scopeWhere = await buildScopeWhere(ctx, "orders");
+  const ordersWhere = { orgId: ctx.orgId, ...scopeWhere };
+  const scopedEmployeeIds =
+    ctx.capabilities.orders.view === "OWN"
+      ? [ctx.employeeId ?? "__none__"]
+      : ctx.capabilities.orders.view === "OWN_GROUP"
+        ? ctx.groupId
+          ? await resolveGroupMemberIds(ctx.orgId, ctx.groupId)
+          : []
+        : null; // null = unscoped (ALL)
 
   const now = new Date();
   const trendFrom = new Date(
@@ -75,12 +86,12 @@ export default async function OrgDashboardPage({
         order: { select: { createdAt: true } },
       },
     }),
-    ctx.orderScope === "OWN"
+    scopedEmployeeIds
       ? prisma.$queryRaw<{ total: string | null }[]>`
           SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
           FROM "OrderLineItem" oli
           JOIN "Order" o ON o.id = oli."orderId"
-          WHERE o."orgId" = ${ctx.orgId} AND o."assignedEmployeeId" = ${ctx.employeeId}
+          WHERE o."orgId" = ${ctx.orgId} AND o."assignedEmployeeId" = ANY(${scopedEmployeeIds})
         `
       : prisma.$queryRaw<{ total: string | null }[]>`
           SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total

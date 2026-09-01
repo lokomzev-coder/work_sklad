@@ -18,10 +18,10 @@ export default async function VaultEntryPage({
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
 
-  if (!can(ctx.role, "vault", "read")) {
+  if (!can(ctx, "vault", "view")) {
     notFound();
   }
-  const canEdit = can(ctx.role, "vault", "edit");
+  const canEdit = can(ctx, "vault", "edit");
 
   const entry = await prisma.vaultServiceEntry.findFirst({
     where: { id, orgId: ctx.orgId },

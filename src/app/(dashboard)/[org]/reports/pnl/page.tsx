@@ -1,4 +1,6 @@
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getPnlReport } from "@/lib/reports";
 import { Card, CardContent } from "@/components/ui/card";
 import { ReportsSubnav } from "@/components/reports/reports-subnav";
@@ -15,6 +17,7 @@ export default async function PnlReportPage({
   const { org } = await params;
   const { from, to } = await searchParams;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "reports", "view")) notFound();
 
   const report = await getPnlReport(ctx.orgId, {
     from: from ? new Date(from) : undefined,
@@ -28,8 +31,11 @@ export default async function PnlReportPage({
       <PeriodFilter from={from} to={to} />
       <p className="text-sm text-muted-foreground">
         Упрощённый расчёт: выручка — по фактическим отгрузкам, себестоимость — по фактическим
-        приёмкам за тот же период (без партионного учёта себестоимости конкретной проданной
-        единицы). Годится как ориентир, не как точная бухгалтерская отчётность.
+        приёмкам (закупкам и производству) за тот же период (без партионного учёта
+        себестоимости конкретной проданной единицы). Себестоимость произведённого товара
+        считается из стоимости списанного сырья (по последней известной закупочной цене) плюс
+        труд/накладные расходы техкарты. Годится как ориентир, не как точная бухгалтерская
+        отчётность.
       </p>
 
       <div className="grid gap-4 sm:grid-cols-3">

@@ -13,40 +13,59 @@ interface ComponentRow {
   key: string;
   catalogItemId: string | null;
   quantity: string;
+  techProcessPositionId: string | null;
+}
+
+interface TechProcessOption {
+  id: string;
+  name: string;
+  positions: { id: string; stageName: string }[];
 }
 
 interface TechCardFormProps {
   orgSlug: string;
   techCardId: string | null;
   productOptions: ComboboxOption[];
+  techProcesses: TechProcessOption[];
   defaultValues?: {
     name: string;
     outputItemId: string | null;
     outputQuantity: string;
-    components: { catalogItemId: string; quantity: string }[];
+    laborCost: string;
+    techProcessId: string | null;
+    components: { catalogItemId: string; quantity: string; techProcessPositionId: string | null }[];
   };
 }
 
 function newRow(): ComponentRow {
-  return { key: crypto.randomUUID(), catalogItemId: null, quantity: "1" };
+  return { key: crypto.randomUUID(), catalogItemId: null, quantity: "1", techProcessPositionId: null };
 }
 
-export function TechCardForm({ orgSlug, techCardId, productOptions, defaultValues }: TechCardFormProps) {
+export function TechCardForm({ orgSlug, techCardId, productOptions, techProcesses, defaultValues }: TechCardFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(defaultValues?.name ?? "");
   const [outputItemId, setOutputItemId] = useState<string | null>(defaultValues?.outputItemId ?? null);
   const [outputQuantity, setOutputQuantity] = useState(defaultValues?.outputQuantity ?? "1");
+  const [laborCost, setLaborCost] = useState(defaultValues?.laborCost ?? "");
+  const [techProcessId, setTechProcessId] = useState<string | null>(defaultValues?.techProcessId ?? null);
   const [rows, setRows] = useState<ComponentRow[]>(() =>
     defaultValues?.components.length
       ? defaultValues.components.map((c) => ({
           key: crypto.randomUUID(),
           catalogItemId: c.catalogItemId,
           quantity: c.quantity,
+          techProcessPositionId: c.techProcessPositionId,
         }))
       : [newRow()],
   );
+
+  const techProcessOptions: ComboboxOption[] = techProcesses.map((tp) => ({ value: tp.id, label: tp.name }));
+  const selectedTechProcess = techProcesses.find((tp) => tp.id === techProcessId) ?? null;
+  const stageOptionsForRow: ComboboxOption[] = selectedTechProcess
+    ? selectedTechProcess.positions.map((p, i) => ({ value: p.id, label: `${i + 1}. ${p.stageName}` }))
+    : [];
 
   function updateRow(key: string, patch: Partial<ComponentRow>) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -75,7 +94,11 @@ export function TechCardForm({ orgSlug, techCardId, productOptions, defaultValue
 
     const components = rows
       .filter((r) => r.catalogItemId)
-      .map((r) => ({ catalogItemId: r.catalogItemId!, quantity: Number(r.quantity) }));
+      .map((r) => ({
+        catalogItemId: r.catalogItemId!,
+        quantity: Number(r.quantity),
+        techProcessPositionId: techProcessId ? r.techProcessPositionId : null,
+      }));
     if (components.length === 0) {
       setError("Добавьте хотя бы один материал");
       return;
@@ -84,12 +107,19 @@ export function TechCardForm({ orgSlug, techCardId, productOptions, defaultValue
       setError("Количество материала должно быть больше 0");
       return;
     }
+    const parsedLaborCost = laborCost.trim() === "" ? null : Number(laborCost);
+    if (parsedLaborCost !== null && (!Number.isFinite(parsedLaborCost) || parsedLaborCost < 0)) {
+      setError("Стоимость труда/накладных не может быть отрицательной");
+      return;
+    }
 
     startTransition(async () => {
       const result = await upsertTechCard(orgSlug, techCardId, {
         name,
         outputItemId,
         outputQuantity: parsedOutputQuantity,
+        laborCost: parsedLaborCost,
+        techProcessId,
         components,
       });
       if (result.error) {
@@ -131,6 +161,27 @@ export function TechCardForm({ orgSlug, techCardId, productOptions, defaultValue
               onChange={(e) => setOutputQuantity(e.target.value)}
             />
           </div>
+          <div className="flex flex-col gap-2">
+            <Label>Труд/накладные расходы за 1 партию (опционально)</Label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0"
+              value={laborCost}
+              onChange={(e) => setLaborCost(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Техпроцесс (опционально — многоэтапное производство)</Label>
+            <EntityCombobox
+              options={techProcessOptions}
+              value={techProcessId}
+              onChange={setTechProcessId}
+              placeholder="Без техпроцесса (одношаговое)"
+              emptyMessage="Техпроцессы не найдены"
+            />
+          </div>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -155,6 +206,17 @@ export function TechCardForm({ orgSlug, techCardId, productOptions, defaultValue
                   onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
                 />
               </div>
+              {selectedTechProcess && (
+                <div className="w-44">
+                  <EntityCombobox
+                    options={stageOptionsForRow}
+                    value={row.techProcessPositionId}
+                    onChange={(v) => updateRow(row.key, { techProcessPositionId: v })}
+                    placeholder="1-й этап"
+                    emptyMessage="Этапы не найдены"
+                  />
+                </div>
+              )}
               <Button
                 type="button"
                 variant="ghost"

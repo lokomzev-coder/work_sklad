@@ -25,7 +25,7 @@ export async function createStore(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = parseStoreForm(formData);
   if (!parsed.success) {
@@ -45,7 +45,7 @@ export async function updateStore(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "edit");
 
   const parsed = parseStoreForm(formData);
   if (!parsed.success) {
@@ -63,7 +63,7 @@ export async function updateStore(
 
 export async function archiveStore(orgSlug: string, storeId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "edit");
 
   await prisma.store.update({
     where: { id: storeId, orgId: ctx.orgId },
@@ -75,7 +75,7 @@ export async function archiveStore(orgSlug: string, storeId: string) {
 
 export async function restoreStore(orgSlug: string, storeId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "edit");
 
   await prisma.store.update({
     where: { id: storeId, orgId: ctx.orgId },
@@ -87,7 +87,7 @@ export async function restoreStore(orgSlug: string, storeId: string) {
 
 export async function deleteStore(orgSlug: string, storeId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "delete");
 
   const result = await archiveOrDelete("store", storeId, ctx.orgId);
 

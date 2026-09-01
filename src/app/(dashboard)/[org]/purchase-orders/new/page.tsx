@@ -46,6 +46,13 @@ export default async function NewPurchaseOrderPage({
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
         customFieldDefs={customFieldDefs}
+        defaultValues={{
+          supplierId: null,
+          assignedEmployeeId: null,
+          contractId: null,
+          legalEntityId: ctx.defaultLegalEntityId,
+          lineItems: [],
+        }}
       />
     </div>
   );

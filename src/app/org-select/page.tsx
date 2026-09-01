@@ -25,7 +25,7 @@ export default async function OrgSelectPage() {
     <div className="mx-auto flex max-w-sm flex-col gap-4 p-10">
       <h1 className="text-xl font-semibold">Выберите организацию</h1>
       {session.memberships.map((m) => (
-        <Link key={m.orgId} href={`/${m.orgSlug}`}>
+        <Link key={m.orgId} href={m.role === "PRODUCTION" ? `/${m.orgSlug}/floor` : `/${m.orgSlug}`}>
           <Card className="transition-colors hover:bg-accent">
             <CardHeader>
               <CardTitle>{m.orgName}</CardTitle>

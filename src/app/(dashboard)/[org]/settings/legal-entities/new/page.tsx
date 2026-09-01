@@ -12,7 +12,7 @@ export default async function NewLegalEntityPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "edit")) notFound();
+  if (!can(ctx, "legalEntities", "create")) notFound();
   const boundAction = createLegalEntity.bind(null, org);
 
   return (

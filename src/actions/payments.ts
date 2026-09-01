@@ -18,7 +18,7 @@ export async function createPayment(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "orders", "edit");
+  assertPermission(ctx, "payments", "create");
 
   const parsed = paymentSchema.safeParse({
     direction: formData.get("direction"),

@@ -17,7 +17,7 @@ export async function createCharacteristic(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "create");
 
   const parsed = characteristicSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {
@@ -36,7 +36,7 @@ export async function createCharacteristic(
 
 export async function deleteCharacteristic(orgSlug: string, characteristicId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "catalog", "edit");
+  assertPermission(ctx, "catalog", "delete");
 
   const usageCount = await prisma.catalogItemVariantValue.count({
     where: { characteristicId },

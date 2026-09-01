@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getSalesByClientReport } from "@/lib/reports";
 import { getOrgBaseCurrency } from "@/lib/currency";
 import {
@@ -20,6 +22,7 @@ export default async function SalesByClientReportPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "reports", "view")) notFound();
 
   const [rows, baseCurrency] = await Promise.all([
     getSalesByClientReport(ctx.orgId),

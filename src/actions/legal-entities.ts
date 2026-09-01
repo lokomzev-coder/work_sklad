@@ -41,7 +41,7 @@ export async function createLegalEntity(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "legalEntities", "create");
 
   const parsed = parseForm(formData);
   if (!parsed.success) {
@@ -66,7 +66,7 @@ export async function updateLegalEntity(
   formData: FormData,
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "legalEntities", "edit");
 
   const parsed = parseForm(formData);
   if (!parsed.success) {
@@ -87,7 +87,7 @@ export async function updateLegalEntity(
 
 export async function archiveLegalEntity(orgSlug: string, legalEntityId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "legalEntities", "edit");
 
   await prisma.legalEntity.update({
     where: { id: legalEntityId, orgId: ctx.orgId },
@@ -99,7 +99,7 @@ export async function archiveLegalEntity(orgSlug: string, legalEntityId: string)
 
 export async function restoreLegalEntity(orgSlug: string, legalEntityId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "legalEntities", "edit");
 
   await prisma.legalEntity.update({
     where: { id: legalEntityId, orgId: ctx.orgId },
@@ -111,7 +111,7 @@ export async function restoreLegalEntity(orgSlug: string, legalEntityId: string)
 
 export async function deleteLegalEntity(orgSlug: string, legalEntityId: string) {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "settings", "edit");
+  assertPermission(ctx, "legalEntities", "delete");
 
   const result = await archiveOrDelete("legalEntity", legalEntityId, ctx.orgId);
 

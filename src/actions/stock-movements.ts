@@ -52,7 +52,7 @@ export async function createStockMovement(
   input: CreateStockMovementInput,
 ): Promise<CreateStockMovementResult> {
   const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx.role, "warehouse", "edit");
+  assertPermission(ctx, "warehouse", "create");
 
   const parsed = createMovementSchema.safeParse(input);
   if (!parsed.success) {

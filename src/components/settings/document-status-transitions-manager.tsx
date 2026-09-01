@@ -35,11 +35,12 @@ interface TransitionRow {
   allowedEmployeeIds: string[];
 }
 
-const ROLES: Role[] = ["ADMIN", "MANAGER", "EMPLOYEE"];
+const ROLES: Role[] = ["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"];
 const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Админ",
   MANAGER: "Менеджер",
   EMPLOYEE: "Сотрудник",
+  PRODUCTION: "Производство",
 };
 
 export function DocumentStatusTransitionsManager({

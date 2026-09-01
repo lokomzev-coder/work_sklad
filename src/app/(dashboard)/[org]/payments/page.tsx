@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
@@ -24,7 +25,8 @@ export default async function PaymentsPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  const canEdit = can(ctx.role, "orders", "edit");
+  if (!can(ctx, "payments", "view")) notFound();
+  const canCreate = can(ctx, "payments", "create");
 
   const payments = await prisma.payment.findMany({
     where: { orgId: ctx.orgId },
@@ -37,7 +39,7 @@ export default async function PaymentsPage({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Платежи</h1>
-        {canEdit && (
+        {canCreate && (
           <Button render={<Link href={`/${org}/payments/new`} />}>Записать платёж</Button>
         )}
       </div>

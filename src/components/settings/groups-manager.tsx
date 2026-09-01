@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { X, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -13,27 +13,25 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { createCustomRole, deleteCustomRole } from "@/actions/custom-roles";
+import { createGroup, archiveGroup, restoreGroup } from "@/actions/groups";
 
-interface RoleRow {
+interface GroupRow {
   id: string;
   name: string;
-  ordersScope: "ALL" | "OWN";
-  membershipCount: number;
+  status: "ACTIVE" | "ARCHIVED";
+  employeeCount: number;
 }
 
-export function CustomRolesManager({ orgSlug, roles }: { orgSlug: string; roles: RoleRow[] }) {
+export function GroupsManager({ orgSlug, groups }: { orgSlug: string; groups: GroupRow[] }) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState("");
-  const [ordersScope, setOrdersScope] = useState<"ALL" | "OWN">("OWN");
 
   function handleCreate() {
     if (!name.trim()) return;
     const formData = new FormData();
     formData.set("name", name.trim());
-    formData.set("ordersScope", ordersScope);
     startTransition(async () => {
-      const result = await createCustomRole(orgSlug, {}, formData);
+      const result = await createGroup(orgSlug, {}, formData);
       if (result.error) {
         toast.error(result.error);
       } else {
@@ -42,10 +40,17 @@ export function CustomRolesManager({ orgSlug, roles }: { orgSlug: string; roles:
     });
   }
 
-  function handleDelete(id: string) {
+  function handleArchive(id: string) {
     startTransition(async () => {
-      await deleteCustomRole(orgSlug, id);
-      toast.success("Роль удалена");
+      await archiveGroup(orgSlug, id);
+      toast.success("Отдел архивирован");
+    });
+  }
+
+  function handleRestore(id: string) {
+    startTransition(async () => {
+      await restoreGroup(orgSlug, id);
+      toast.success("Отдел восстановлен");
     });
   }
 
@@ -55,42 +60,36 @@ export function CustomRolesManager({ orgSlug, roles }: { orgSlug: string; roles:
         <TableHeader>
           <TableRow>
             <TableHead>Название</TableHead>
-            <TableHead>Видимость заказов/закупок</TableHead>
             <TableHead>Сотрудников</TableHead>
             <TableHead className="w-0" />
           </TableRow>
         </TableHeader>
         <TableBody>
-          {roles.map((role) => (
-            <TableRow key={role.id}>
-              <TableCell className="font-medium">{role.name}</TableCell>
-              <TableCell>{role.ordersScope === "OWN" ? "Только свои" : "Все"}</TableCell>
-              <TableCell className="text-muted-foreground">{role.membershipCount}</TableCell>
+          {groups.map((group) => (
+            <TableRow key={group.id} className={group.status === "ARCHIVED" ? "opacity-60" : undefined}>
+              <TableCell className="font-medium">{group.name}</TableCell>
+              <TableCell className="text-muted-foreground">{group.employeeCount}</TableCell>
               <TableCell className="text-right">
-                <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => handleDelete(role.id)}>
-                  <X className="size-4" />
-                </Button>
+                {group.status === "ACTIVE" ? (
+                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => handleArchive(group.id)}>
+                    <X className="size-4" />
+                  </Button>
+                ) : (
+                  <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => handleRestore(group.id)}>
+                    <RotateCcw className="size-4" />
+                  </Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
           <TableRow>
             <TableCell>
               <Input
-                placeholder="Название роли"
+                placeholder="Название отдела"
                 className="h-8"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
               />
-            </TableCell>
-            <TableCell>
-              <select
-                className="h-8 rounded-md border bg-background px-2 text-sm"
-                value={ordersScope}
-                onChange={(e) => setOrdersScope(e.target.value as "ALL" | "OWN")}
-              >
-                <option value="OWN">Только свои</option>
-                <option value="ALL">Все</option>
-              </select>
             </TableCell>
             <TableCell />
             <TableCell className="text-right">

@@ -31,7 +31,7 @@ export default async function VaultPage({
   // Vault visibility is a real security boundary, not just a hidden nav
   // item -- EMPLOYEE role gets a 404 here, same as any other org resource
   // they have no business touching.
-  if (!can(ctx.role, "vault", "read")) {
+  if (!can(ctx, "vault", "view")) {
     notFound();
   }
 
@@ -44,7 +44,7 @@ export default async function VaultPage({
     include: { tags: { include: { tag: true } } },
   });
 
-  const canEdit = can(ctx.role, "vault", "edit");
+  const canEdit = can(ctx, "vault", "edit");
 
   return (
     <div className="flex flex-col gap-4">

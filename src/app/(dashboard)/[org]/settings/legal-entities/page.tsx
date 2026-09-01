@@ -24,8 +24,8 @@ export default async function LegalEntitiesPage({
   const { org } = await params;
   const { status } = await searchParams;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "read")) notFound();
-  const canEdit = can(ctx.role, "settings", "edit");
+  if (!can(ctx, "legalEntities", "view")) notFound();
+  const canEdit = can(ctx, "legalEntities", "edit");
 
   const statusFilter: EntityStatusFilter = status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
 

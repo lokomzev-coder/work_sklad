@@ -12,7 +12,7 @@ export default async function CurrenciesPage({
 }) {
   const { org } = await params;
   const ctx = await getOrgContext(org);
-  if (!can(ctx.role, "settings", "read")) notFound();
+  if (!can(ctx, "exchangeRates", "view")) notFound();
 
   const [orgRow, rates] = await Promise.all([
     prisma.organization.findUniqueOrThrow({ where: { id: ctx.orgId }, select: { baseCurrency: true } }),

@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
+import { isRowVisible } from "@/lib/scope";
 import { updateClient } from "@/actions/clients";
 import { ClientForm } from "@/components/clients/client-form";
 import { getClientBalance } from "@/lib/balances";
@@ -17,12 +19,16 @@ export default async function EditClientPage({
 }) {
   const { org, id } = await params;
   const ctx = await getOrgContext(org);
+  if (!can(ctx, "clients", "view")) notFound();
 
   const client = await prisma.client.findFirst({
     where: { id, orgId: ctx.orgId },
   });
 
   if (!client) {
+    notFound();
+  }
+  if (!(await isRowVisible(ctx, "clients", client.assignedEmployeeId))) {
     notFound();
   }
 
