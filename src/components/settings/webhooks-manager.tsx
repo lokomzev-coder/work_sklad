@@ -15,7 +15,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { createWebhook, toggleWebhookActive, deleteWebhook } from "@/actions/webhooks";
+import { createWebhook, toggleWebhookActive, deleteWebhook, retryWebhookDeliveryNow } from "@/actions/webhooks";
 import type { WebhookEvent } from "@/generated/prisma/enums";
 
 const EVENT_LABELS: Record<WebhookEvent, string> = {
@@ -27,7 +27,21 @@ const EVENT_LABELS: Record<WebhookEvent, string> = {
   PRODUCTION_ORDER_CREATED: "Производственное задание создано",
   PRODUCTION_ORDER_STATUS_CHANGED: "Статус производственного задания изменён",
   PRODUCTION_ORDER_COMPLETED: "Производство выполнено (полностью или частично)",
+  INVOICE_OUT_CREATED: "Счёт покупателю создан",
+  INVOICE_OUT_STATUS_CHANGED: "Статус счёта покупателю изменён",
+  INVOICE_IN_CREATED: "Счёт поставщика создан",
+  INVOICE_IN_STATUS_CHANGED: "Статус счёта поставщика изменён",
 };
+
+interface DeliveryRow {
+  id: string;
+  success: boolean;
+  createdAt: string;
+  statusCode: number | null;
+  error: string | null;
+  attemptCount: number;
+  nextRetryAt: string | null;
+}
 
 interface WebhookRow {
   id: string;
@@ -35,13 +49,28 @@ interface WebhookRow {
   secret: string;
   events: WebhookEvent[];
   isActive: boolean;
-  deliveries: { success: boolean; createdAt: string; statusCode: number | null; error: string | null }[];
+  deliveries: DeliveryRow[];
 }
 
-export function WebhooksManager({ orgSlug, webhooks }: { orgSlug: string; webhooks: WebhookRow[] }) {
+export function WebhooksManager({
+  orgSlug,
+  webhooks,
+  maxAttempts,
+}: {
+  orgSlug: string;
+  webhooks: WebhookRow[];
+  maxAttempts: number;
+}) {
   const [isPending, startTransition] = useTransition();
   const [url, setUrl] = useState("");
   const [events, setEvents] = useState<WebhookEvent[]>([]);
+
+  function handleRetryNow(deliveryId: string) {
+    startTransition(async () => {
+      await retryWebhookDeliveryNow(orgSlug, deliveryId);
+      toast.success("Повтор запланирован на ближайший запуск");
+    });
+  }
 
   function handleCreate() {
     if (!url.trim() || events.length === 0) return;
@@ -147,6 +176,7 @@ export function WebhooksManager({ orgSlug, webhooks }: { orgSlug: string; webhoo
                         <TableHead>Когда</TableHead>
                         <TableHead>Результат</TableHead>
                         <TableHead>Код</TableHead>
+                        <TableHead>Повтор</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -160,6 +190,28 @@ export function WebhooksManager({ orgSlug, webhooks }: { orgSlug: string; webhoo
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {d.statusCode ?? d.error ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {d.nextRetryAt ? (
+                              <div className="flex items-center gap-2">
+                                <span>
+                                  попытка {d.attemptCount}/{maxAttempts} · след. {d.nextRetryAt}
+                                </span>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={isPending}
+                                  onClick={() => handleRetryNow(d.id)}
+                                >
+                                  Повторить сейчас
+                                </Button>
+                              </div>
+                            ) : !d.success && d.attemptCount >= maxAttempts ? (
+                              `попыток исчерпано (${d.attemptCount}/${maxAttempts})`
+                            ) : (
+                              "—"
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}

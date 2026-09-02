@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { isRowVisible } from "@/lib/scope";
 import { OrderForm } from "@/components/orders/order-form";
 import { OrderStatusSelect } from "@/components/orders/order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
-import { PrintButton } from "@/components/print/print-button";
+import { PrintDialog } from "@/components/print/print-dialog";
+import { Button } from "@/components/ui/button";
+import { createInvoiceFromOrder } from "@/actions/invoices-out";
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
@@ -41,54 +43,58 @@ export default async function EditOrderPage({
     },
   };
 
-  const [
-    activeClients,
-    activeEmployees,
-    activeCatalogItems,
-    referencedClient,
-    referencedEmployee,
-    referencedCatalogItems,
-    contracts,
-    salesChannels,
-    legalEntities,
-    statusOptions,
-    customFieldDefs,
-    customFieldValues,
-  ] = await Promise.all([
-    prisma.client.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { name: "asc" },
-    }),
-    prisma.employee.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { fullName: "asc" },
-    }),
-    prisma.catalogItem.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { name: "asc" },
-      include: variantInclude,
-    }),
-    order.clientId
-      ? prisma.client.findUnique({ where: { id: order.clientId } })
-      : null,
-    order.assignedEmployeeId
-      ? prisma.employee.findUnique({ where: { id: order.assignedEmployeeId } })
-      : null,
-    prisma.catalogItem.findMany({
-      where: { id: { in: referencedCatalogItemIds } },
-      include: variantInclude,
-    }),
-    prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
-    prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
-    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    getSelectableStatuses(ctx.orgId, "ORDER", order.statusId, {
-      role: ctx.role,
-      customRoleId: ctx.customRoleId,
-      employeeId: ctx.employeeId,
-    }),
-    listCustomFieldDefinitions(ctx.orgId, "ORDER"),
-    getCustomFieldValues(order.id),
-  ]);
+  // Block: split into two smaller sequential batches (was one 12-wide
+  // Promise.all) — the local `prisma dev` proxy chokes when too many brand-
+  // new connections open in the same instant ("Server has closed the
+  // connection", reproducible even on an immediate retry of the same-size
+  // burst; see lib/prisma.ts). This is the single most-visited page shape
+  // in the app (every order view), so it's an even bigger real-world risk
+  // than the dashboard was. withDbRetry on each half as a second layer —
+  // safe, every query here is read-only.
+  const [activeClients, activeEmployees, activeCatalogItems, referencedClient, referencedEmployee, referencedCatalogItems] =
+    await withDbRetry(() =>
+      Promise.all([
+        prisma.client.findMany({
+          where: { orgId: ctx.orgId, status: "ACTIVE" },
+          orderBy: { name: "asc" },
+        }),
+        prisma.employee.findMany({
+          where: { orgId: ctx.orgId, status: "ACTIVE" },
+          orderBy: { fullName: "asc" },
+        }),
+        prisma.catalogItem.findMany({
+          where: { orgId: ctx.orgId, status: "ACTIVE" },
+          orderBy: { name: "asc" },
+          include: variantInclude,
+        }),
+        order.clientId
+          ? prisma.client.findUnique({ where: { id: order.clientId } })
+          : null,
+        order.assignedEmployeeId
+          ? prisma.employee.findUnique({ where: { id: order.assignedEmployeeId } })
+          : null,
+        prisma.catalogItem.findMany({
+          where: { id: { in: referencedCatalogItemIds } },
+          include: variantInclude,
+        }),
+      ]),
+    );
+
+  const [contracts, salesChannels, legalEntities, statusOptions, customFieldDefs, customFieldValues] =
+    await withDbRetry(() =>
+      Promise.all([
+        prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+        prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+        prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+        getSelectableStatuses(ctx.orgId, "ORDER", order.statusId, {
+          role: ctx.role,
+          customRoleId: ctx.customRoleId,
+          employeeId: ctx.employeeId,
+        }),
+        listCustomFieldDefinitions(ctx.orgId, "ORDER"),
+        getCustomFieldValues(order.id),
+      ]),
+    );
 
   // Archived entities stay out of the "pick something new" list, but an
   // already-referenced archived entity must still render (its FK is valid).
@@ -141,7 +147,20 @@ export default async function EditOrderPage({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказ №{order.number}</h1>
         <div className="flex items-center gap-2">
-          <PrintButton href={`/print/orders/${org}/${order.id}`} />
+          {can(ctx, "invoicesOut", "create") && (
+            <form action={createInvoiceFromOrder.bind(null, org, order.id)}>
+              <Button type="submit" variant="outline" size="sm">
+                Создать счёт
+              </Button>
+            </form>
+          )}
+          <PrintDialog
+            documentType="order"
+            orgSlug={org}
+            documentId={order.id}
+            legalEntities={legalEntities.map((e) => ({ id: e.id, name: e.name }))}
+            currentLegalEntityId={order.legalEntityId}
+          />
           <OrderStatusSelect
             orgSlug={org}
             orderId={order.id}

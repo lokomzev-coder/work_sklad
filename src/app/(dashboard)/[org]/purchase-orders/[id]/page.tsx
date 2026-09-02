@@ -1,12 +1,14 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { isRowVisible } from "@/lib/scope";
 import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-form";
 import { PurchaseOrderStatusSelect } from "@/components/purchase-orders/purchase-order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
-import { PrintButton } from "@/components/print/print-button";
+import { PrintDialog } from "@/components/print/print-dialog";
+import { Button } from "@/components/ui/button";
+import { createInvoiceFromPurchaseOrder } from "@/actions/invoices-in";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 
@@ -33,39 +35,39 @@ export default async function EditPurchaseOrderPage({
 
   const referencedCatalogItemIds = purchaseOrder.lineItems.map((li) => li.catalogItemId);
 
-  const [
-    activeSuppliers,
-    activeEmployees,
-    activeCatalogItems,
-    referencedSupplier,
-    referencedEmployee,
-    referencedCatalogItems,
-    contracts,
-    legalEntities,
-    statusOptions,
-    customFieldDefs,
-    customFieldValues,
-  ] = await Promise.all([
-    prisma.client.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
-    prisma.catalogItem.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    purchaseOrder.supplierId
-      ? prisma.client.findUnique({ where: { id: purchaseOrder.supplierId } })
-      : null,
-    purchaseOrder.assignedEmployeeId
-      ? prisma.employee.findUnique({ where: { id: purchaseOrder.assignedEmployeeId } })
-      : null,
-    prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
-    prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
-    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    getSelectableStatuses(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, {
-      role: ctx.role,
-      customRoleId: ctx.customRoleId,
-      employeeId: ctx.employeeId,
-    }),
-    listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
-    getCustomFieldValues(purchaseOrder.id),
-  ]);
+  // Block: split into two smaller sequential batches (was one 11-wide
+  // Promise.all) — same fix as orders/[id]/page.tsx, see its comment for why
+  // (local `prisma dev` proxy chokes on too many simultaneous new
+  // connections). withDbRetry on each half — safe, every query is read-only.
+  const [activeSuppliers, activeEmployees, activeCatalogItems, referencedSupplier, referencedEmployee, referencedCatalogItems] =
+    await withDbRetry(() =>
+      Promise.all([
+        prisma.client.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+        prisma.employee.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { fullName: "asc" } }),
+        prisma.catalogItem.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+        purchaseOrder.supplierId
+          ? prisma.client.findUnique({ where: { id: purchaseOrder.supplierId } })
+          : null,
+        purchaseOrder.assignedEmployeeId
+          ? prisma.employee.findUnique({ where: { id: purchaseOrder.assignedEmployeeId } })
+          : null,
+        prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
+      ]),
+    );
+
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues] = await withDbRetry(() =>
+    Promise.all([
+      prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+      prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      getSelectableStatuses(ctx.orgId, "PURCHASE_ORDER", purchaseOrder.statusId, {
+        role: ctx.role,
+        customRoleId: ctx.customRoleId,
+        employeeId: ctx.employeeId,
+      }),
+      listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
+      getCustomFieldValues(purchaseOrder.id),
+    ]),
+  );
 
   const suppliers = referencedSupplier
     ? [referencedSupplier, ...activeSuppliers.filter((c) => c.id !== referencedSupplier.id)]
@@ -116,7 +118,20 @@ export default async function EditPurchaseOrderPage({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказ поставщику №{purchaseOrder.number}</h1>
         <div className="flex items-center gap-2">
-          <PrintButton href={`/print/purchase-orders/${org}/${purchaseOrder.id}`} />
+          {can(ctx, "invoicesIn", "create") && (
+            <form action={createInvoiceFromPurchaseOrder.bind(null, org, purchaseOrder.id)}>
+              <Button type="submit" variant="outline" size="sm">
+                Создать счёт
+              </Button>
+            </form>
+          )}
+          <PrintDialog
+            documentType="purchaseOrder"
+            orgSlug={org}
+            documentId={purchaseOrder.id}
+            legalEntities={legalEntities.map((e) => ({ id: e.id, name: e.name }))}
+            currentLegalEntityId={purchaseOrder.legalEntityId}
+          />
           <PurchaseOrderStatusSelect
             orgSlug={org}
             purchaseOrderId={purchaseOrder.id}

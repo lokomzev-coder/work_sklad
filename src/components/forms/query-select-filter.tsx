@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface QuerySelectFilterProps {
   basePath: string;
@@ -10,8 +11,13 @@ interface QuerySelectFilterProps {
   options: { value: string; label: string }[];
 }
 
-/** A plain <select> that filters a list page via a URL query param —
- * navigates on change, preserves other existing query params. */
+/** Not a real option value — base-ui's Select treats "" as "nothing
+ * selected", so the "show everything" choice needs its own sentinel,
+ * translated back to "" (removes the query param) at the boundary. */
+const ALL_VALUE = "__all__";
+
+/** Filters a list page via a URL query param — navigates on change,
+ * preserves other existing query params. */
 export function QuerySelectFilter({
   basePath,
   paramName,
@@ -24,7 +30,7 @@ export function QuerySelectFilter({
 
   function handleChange(next: string) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next) {
+    if (next && next !== ALL_VALUE) {
       params.set(paramName, next);
     } else {
       params.delete(paramName);
@@ -34,17 +40,22 @@ export function QuerySelectFilter({
   }
 
   return (
-    <select
-      className="h-9 rounded-md border bg-background px-3 text-sm"
-      value={value}
-      onChange={(e) => handleChange(e.target.value)}
+    <Select
+      value={value || ALL_VALUE}
+      items={{ [ALL_VALUE]: allLabel, ...Object.fromEntries(options.map((o) => [o.value, o.label])) }}
+      onValueChange={(v) => handleChange(v ?? ALL_VALUE)}
     >
-      <option value="">{allLabel}</option>
-      {options.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger className="h-9 w-full">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_VALUE}>{allLabel}</SelectItem>
+        {options.map((opt) => (
+          <SelectItem key={opt.value} value={opt.value}>
+            {opt.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

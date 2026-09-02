@@ -58,11 +58,14 @@ model Organization {
   characteristics        Characteristic[]
   orders                 Order[]
   purchaseOrders         PurchaseOrder[]
+  invoicesOut            InvoiceOut[]
+  invoicesIn             InvoiceIn[]
   payments               Payment[]
   vaultEntries           VaultServiceEntry[]
   tags                   Tag[]
   stores                 Store[]
   stockMovements         StockMovement[]
+  stockBatches           StockBatch[]
   salesChannels          SalesChannel[]
   contracts              Contract[]
   legalEntities          LegalEntity[]
@@ -212,6 +215,8 @@ model Client {
 
   orders         Order[]
   purchaseOrders PurchaseOrder[] @relation("Supplier")
+  invoicesOut    InvoiceOut[]
+  invoicesIn     InvoiceIn[]     @relation("InvoiceInSupplier")
   payments       Payment[]
   contacts       ClientContact[]
   addresses      ClientAddress[]
@@ -263,6 +268,8 @@ model Contract {
 
   orders         Order[]
   purchaseOrders PurchaseOrder[]
+  invoicesOut    InvoiceOut[]
+  invoicesIn     InvoiceIn[]
 
   @@index([orgId])
   @@index([clientId])
@@ -342,9 +349,12 @@ model CatalogItem {
 
   lineItems              OrderLineItem[]
   purchaseOrderLineItems PurchaseOrderLineItem[]
+  invoiceOutLineItems    InvoiceOutLineItem[]
+  invoiceInLineItems     InvoiceInLineItem[]
   bundleComponents       CatalogItemComponent[] @relation("BundleComponents")
   partOfBundles          CatalogItemComponent[] @relation("ComponentOfBundles")
   stockMovementLines     StockMovementLine[]
+  stockBatches           StockBatch[]
   variants               CatalogItemVariant[]
   techCardOutputs        TechCard[]              @relation("TechCardOutput")
   techCardComponentOf    TechCardComponent[]     @relation("TechCardComponentItem")
@@ -383,8 +393,9 @@ model CatalogItemVariant {
   archivedAt    DateTime?
   createdAt     DateTime     @default(now())
 
-  values    CatalogItemVariantValue[]
-  lineItems OrderLineItem[]
+  values             CatalogItemVariantValue[]
+  lineItems          OrderLineItem[]
+  invoiceOutLineItems InvoiceOutLineItem[]
 
   @@index([catalogItemId, status])
 }
@@ -521,9 +532,77 @@ model StockMovementLine {
   // order/PO line being fulfilled. Null wherever unitPriceSnapshot is null
   // (ENTER/LOSS/MOVE/INVENTORY have no price at all).
   currency          String?
+  // Block M2: rate to baseCurrency at posting time, null if currency ==
+  // baseCurrency or a pre-M2 row — see lib/currency.ts::getRateAt.
+  rateSnapshot      Decimal?      @db.Decimal(14, 6)
+
+  // Block M1: set only for a SUPPLY line — the batch this receipt created.
+  batchSource       StockBatch?             @relation("BatchSource")
+  // Block M1: set only for a DEMAND line — which batch(es) this sale drew
+  // from (FIFO), possibly several if the oldest batch didn't have enough.
+  batchAllocations  StockBatchAllocation[]  @relation("BatchAllocationDemand")
 
   @@index([movementId])
   @@index([catalogItemId])
+}
+
+// Block M1 — one row per SUPPLY receipt line, tracks its own remaining
+// quantity so DEMAND can be cost-matched FIFO instead of P&L approximating
+// cost as "everything received in the period" (see lib/reports.ts::
+// getPnlReport and ROADMAP.md Block M/M1). Deliberately NOT store-scoped —
+// FIFO is per (org, catalogItem) company-wide, not per store, so a MOVE
+// between stores never needs to migrate a batch. Deliberately only created
+// from SUPPLY, never PRODUCTION_OUTPUT — produced goods keep the old
+// period-based cost approximation, a documented scope boundary, not an
+// oversight.
+model StockBatch {
+  id                   String       @id @default(cuid())
+  orgId                String
+  org                  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  catalogItemId        String
+  catalogItem          CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  sourceMovementLineId String       @unique
+  sourceMovementLine   StockMovementLine @relation("BatchSource", fields: [sourceMovementLineId], references: [id], onDelete: Cascade)
+  unitCost             Decimal      @db.Decimal(12, 2)
+  currency             String?
+  // Block M2: rate to baseCurrency at receipt time — the cost basis is
+  // fixed when the purchase is paid for, not when the batch later sells,
+  // so this is captured once here and never re-looked-up. Null if
+  // currency == baseCurrency or a pre-M2 row.
+  rateSnapshot         Decimal?     @db.Decimal(14, 6)
+  initialQuantity      Decimal      @db.Decimal(12, 3)
+  // Decremented FIFO as DEMAND lines consume from it via StockBatchAllocation.
+  // Never deleted once it hits 0 — allocations still need it for history.
+  remainingQuantity    Decimal      @db.Decimal(12, 3)
+  createdAt            DateTime     @default(now())
+
+  allocations StockBatchAllocation[]
+
+  @@index([orgId, catalogItemId, createdAt])
+}
+
+// One row per (DEMAND line, batch it drew from) — a single sale can span
+// multiple batches when the oldest one doesn't have enough left, so this is
+// a join table rather than a single batchId column on StockMovementLine.
+model StockBatchAllocation {
+  id           String     @id @default(cuid())
+  batchId      String
+  batch        StockBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  demandLineId String
+  demandLine   StockMovementLine @relation("BatchAllocationDemand", fields: [demandLineId], references: [id], onDelete: Cascade)
+  quantity     Decimal    @db.Decimal(12, 3)
+  // Snapshotted from batch.unitCost at allocation time, same reasoning as
+  // unitPriceSnapshot elsewhere — a later change to the batch record must
+  // never retroactively change an already-posted sale's recorded cost.
+  unitCost     Decimal    @db.Decimal(12, 2)
+  currency     String?
+  // Block M2: copied from batch.rateSnapshot at allocation time, same
+  // defensive-snapshot reasoning as unitCost/currency above.
+  rateSnapshot Decimal?   @db.Decimal(14, 6)
+  createdAt    DateTime   @default(now())
+
+  @@index([batchId])
+  @@index([demandLineId])
 }
 
 // Company's own legal entity issuing a document (D1) — distinct from the
@@ -551,6 +630,8 @@ model LegalEntity {
 
   orders                Order[]
   purchaseOrders        PurchaseOrder[]
+  invoicesOut           InvoiceOut[]
+  invoicesIn            InvoiceIn[]
   employeesWithDefault  Employee[]
 
   @@index([orgId, status])
@@ -567,6 +648,8 @@ enum DocumentStatusKind {
   ORDER
   PURCHASE_ORDER
   PRODUCTION_ORDER
+  INVOICE_OUT
+  INVOICE_IN
 }
 
 model DocumentStatus {
@@ -585,6 +668,8 @@ model DocumentStatus {
   orders           Order[]
   purchaseOrders   PurchaseOrder[]
   productionOrders ProductionOrder[]
+  invoicesOut      InvoiceOut[]
+  invoicesIn       InvoiceIn[]
   transitionsOut   DocumentStatusTransition[] @relation("TransitionFrom")
   transitionsIn    DocumentStatusTransition[] @relation("TransitionTo")
 
@@ -858,6 +943,7 @@ model Order {
   lineItems OrderLineItem[]
   demands   StockMovement[]
   payments  Payment[]
+  invoicesOut InvoiceOut[]
 
   @@unique([orgId, number])
   @@index([orgId, statusId])
@@ -900,6 +986,7 @@ model PurchaseOrder {
   lineItems PurchaseOrderLineItem[]
   supplies  StockMovement[]
   payments  Payment[]
+  invoicesIn InvoiceIn[]
 
   @@unique([orgId, number])
   @@index([orgId, statusId])
@@ -918,14 +1005,112 @@ model PurchaseOrderLineItem {
   @@index([purchaseOrderId])
 }
 
+// --- Block M5: invoices ----------------------------------------------------
+// InvoiceOut/InvoiceIn mirror Order/PurchaseOrder (own LineItem, own
+// DocumentStatus kind), but are deliberately OPTIONAL side documents, not a
+// mandatory step in the order→shipment/payment flow — a Payment can still
+// link directly to nothing at all, exactly as before this block. `orderId`/
+// `purchaseOrderId` below record provenance only (set once at creation via
+// the "Create invoice" convenience action) and are never re-synced if the
+// source document changes later — same snapshot principle as
+// unitPriceSnapshot everywhere else in this schema. No assignedEmployeeId —
+// unlike Order/PurchaseOrder, invoices aren't in SCOPED_RESOURCES (see
+// lib/permissions.ts); Payment, the nearest sibling money document, isn't
+// row-owned either, so this isn't a new authority boundary. Sum/paid are
+// computed on read (Σ lineItems, Σ linked Payment.amount), not stored
+// columns — same as Order's own total.
+model InvoiceOut {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number             Int
+  clientId           String?
+  client             Client?      @relation(fields: [clientId], references: [id])
+  contractId         String?
+  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  legalEntityId      String?
+  legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId           String
+  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  // Provenance only — see block comment above. Null for a standalone invoice
+  // created without a source order.
+  orderId            String?
+  order              Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now())
+
+  lineItems InvoiceOutLineItem[]
+  payments  Payment[]
+
+  @@unique([orgId, number])
+  @@index([orgId, statusId])
+}
+
+model InvoiceOutLineItem {
+  id                String              @id @default(cuid())
+  invoiceOutId      String
+  invoiceOut        InvoiceOut          @relation(fields: [invoiceOutId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  currency          String              @default("RUB")
+
+  @@index([invoiceOutId])
+}
+
+model InvoiceIn {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number             Int
+  supplierId         String?
+  supplier           Client?      @relation("InvoiceInSupplier", fields: [supplierId], references: [id])
+  contractId         String?
+  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  legalEntityId      String?
+  legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId           String
+  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  // Provenance only — see block comment above. Null for a standalone invoice
+  // created without a source purchase order.
+  purchaseOrderId    String?
+  purchaseOrder      PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  createdAt          DateTime     @default(now())
+
+  lineItems InvoiceInLineItem[]
+  payments  Payment[]
+
+  @@unique([orgId, number])
+  @@index([orgId, statusId])
+}
+
+model InvoiceInLineItem {
+  id                String      @id @default(cuid())
+  invoiceInId       String
+  invoiceIn         InvoiceIn   @relation(fields: [invoiceInId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem @relation(fields: [catalogItemId], references: [id])
+  quantity          Decimal     @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal     @db.Decimal(12, 2)
+  currency          String      @default("RUB")
+
+  @@index([invoiceInId])
+}
+
 enum PaymentDirection {
   IN
   OUT
 }
 
 // A minimal money ledger — enough to answer "who owes us / who do we owe"
-// (lib/balances.ts) without modeling full invoices yet (ROADMAP Block C3
-// still needs InvoiceIn/InvoiceOut/Prepayment as a separate follow-up).
+// (lib/balances.ts). Block M5: optional links to InvoiceOut/InvoiceIn, set
+// only via lib/invoices.ts-style per-document payment recording (not the
+// generic /payments/new form) — a MoySklad-accurate "Prepayment" document
+// was deliberately not built (it turned out to be retail-only, ROADMAP
+// Block E territory); an advance is still just a Payment with no invoice
+// link at all, same as before this block.
 model Payment {
   id              String           @id @default(cuid())
   orgId           String
@@ -933,12 +1118,21 @@ model Payment {
   direction       PaymentDirection
   amount          Decimal          @db.Decimal(12, 2)
   currency        String           @default("RUB")
+  // Block M2: rate to baseCurrency at posting time (null if currency ==
+  // baseCurrency, or a pre-M2 row) — see lib/currency.ts::getRateAt. Reports
+  // use this instead of re-fetching today's rate, so an already-recorded
+  // payment doesn't silently reprice when the org's exchange rate changes.
+  rateSnapshot    Decimal?         @db.Decimal(14, 6)
   counterpartyId  String
   counterparty    Client           @relation(fields: [counterpartyId], references: [id], onDelete: Restrict)
   orderId         String?
   order           Order?           @relation(fields: [orderId], references: [id], onDelete: SetNull)
   purchaseOrderId String?
   purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  invoiceOutId    String?
+  invoiceOut      InvoiceOut?      @relation(fields: [invoiceOutId], references: [id], onDelete: SetNull)
+  invoiceInId     String?
+  invoiceIn       InvoiceIn?       @relation(fields: [invoiceInId], references: [id], onDelete: SetNull)
   comment         String?
   createdAt       DateTime         @default(now())
 
@@ -1043,6 +1237,8 @@ enum CustomFieldEntityType {
   ORDER
   PURCHASE_ORDER
   PRODUCTION_ORDER
+  INVOICE_OUT
+  INVOICE_IN
 }
 
 enum CustomFieldType {
@@ -1087,11 +1283,15 @@ model CustomFieldValue {
 
 // --- Block H2: multi-currency --------------------------------------------
 // One rate per (org, currency, effective date) — "how many units of
-// Organization.baseCurrency for 1 unit of `currency`". Converting an amount
-// looks up the latest rate with effectiveAt <= the amount's own date (falls
-// back to the latest rate overall if the amount predates every recorded
-// rate). No historical FX table/provider integration — rates are entered by
-// hand, same spirit as everything else in this MVP.
+// Organization.baseCurrency for 1 unit of `currency`". Block M2:
+// lib/currency.ts::getRateAt implements the point-in-time lookup this
+// comment always described — latest rate with effectiveAt <= the amount's
+// own date, falling back to the latest rate overall if the amount predates
+// every recorded rate — and Payment/StockMovementLine/StockBatch/
+// StockBatchAllocation snapshot the result at posting time (rateSnapshot)
+// so a later rate change doesn't retroactively reprice an already-posted
+// document. No historical FX table/provider integration — rates are
+// entered by hand, same spirit as everything else in this MVP.
 model ExchangeRate {
   id          String       @id @default(cuid())
   orgId       String
@@ -1107,10 +1307,12 @@ model ExchangeRate {
 // --- Block H4: webhooks ---------------------------------------------------
 // Best-effort outbound notifications for external integrations (1С, sites,
 // marketplaces) — fire-and-forget HTTP POST with an HMAC-SHA256 signature
-// over the raw body (header X-EasyWork-Signature), no retry queue (no
-// background-job infra exists yet in this project) — a failed delivery is
-// just logged to WebhookDelivery for the user to notice and re-trigger
-// manually if needed.
+// over the raw body (header X-EasyWork-Signature). Block M3: a failed
+// delivery is retried with exponential backoff (lib/webhooks.ts::
+// retryPendingDeliveries), driven by an external scheduler hitting
+// /api/cron/webhook-retries — this project still has no in-process
+// background-job infra, so the retry loop only advances when that route is
+// called, not on its own.
 enum WebhookEvent {
   ORDER_CREATED
   ORDER_STATUS_CHANGED
@@ -1120,6 +1322,10 @@ enum WebhookEvent {
   PRODUCTION_ORDER_CREATED
   PRODUCTION_ORDER_STATUS_CHANGED
   PRODUCTION_ORDER_COMPLETED
+  INVOICE_OUT_CREATED
+  INVOICE_OUT_STATUS_CHANGED
+  INVOICE_IN_CREATED
+  INVOICE_IN_STATUS_CHANGED
 }
 
 model Webhook {
@@ -1142,12 +1348,26 @@ model WebhookDelivery {
   webhookId  String
   webhook    Webhook      @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   event      WebhookEvent
+  // Block M3: the exact request body sent, so a retry can resend it without
+  // the original in-memory dispatch data. Nullable — pre-M3 rows never had
+  // one, and `db push` can't add a required column to a non-empty table.
+  payload    Json?
   statusCode Int?
   success    Boolean
   error      String?
+  // Block M3: retry queue. attemptCount starts at 1 (the initial dispatch
+  // counts as attempt 1); nextRetryAt is set after a failed attempt that
+  // hasn't hit MAX_ATTEMPTS yet (see lib/webhooks.ts). null means no retry
+  // is pending — delivered, exhausted retries, its webhook was deactivated,
+  // or (pre-M3 rows) this field was never set — consistent with M1/M2's
+  // "no retroactive backfill" pattern, such rows are simply never picked up.
+  attemptCount Int        @default(1)
+  nextRetryAt  DateTime?
   createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
   @@index([webhookId, createdAt])
+  @@index([nextRetryAt])
 }
 
 // --- Block I/I2.1: flexible permissions ------------------------------------

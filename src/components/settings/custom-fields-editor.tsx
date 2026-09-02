@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CustomFieldDef } from "@/lib/custom-fields";
 
@@ -11,6 +12,11 @@ interface CustomFieldsEditorProps {
   values: Record<string, string>;
   onChange: (definitionId: string, value: string) => void;
 }
+
+/** Not a real option — base-ui's Select treats "" as "nothing selected", so
+ * the "unset" choice needs its own sentinel, translated back to "" at the
+ * boundary. */
+const EMPTY_VALUE = "__empty__";
 
 /** Controlled counterpart of CustomFieldsSection, for forms driven by React
  * state + a direct Server Action call (Order, PurchaseOrder) rather than a
@@ -38,19 +44,23 @@ export function CustomFieldsEditor({ defs, values, onChange }: CustomFieldsEdito
                   />
                 </div>
               ) : def.type === "SELECT" ? (
-                <select
-                  id={`cf-${def.id}`}
-                  value={value}
-                  onChange={(e) => onChange(def.id, e.target.value)}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                <Select
+                  value={value || EMPTY_VALUE}
+                  items={{ [EMPTY_VALUE]: "—", ...Object.fromEntries(def.options.map((o) => [o, o])) }}
+                  onValueChange={(v) => onChange(def.id, !v || v === EMPTY_VALUE ? "" : v)}
                 >
-                  <option value="">—</option>
-                  {def.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id={`cf-${def.id}`} className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={EMPTY_VALUE}>—</SelectItem>
+                    {def.options.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input
                   id={`cf-${def.id}`}

@@ -42,7 +42,7 @@ export function OrgSidebarNav({ org, items, collapsed }: OrgSidebarNavProps) {
         href={href}
         aria-current={isActive ? "page" : undefined}
         className={cn(
-          "group/nav-item relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-colors",
+          "group/nav-item relative flex items-center gap-2.5 rounded-full px-2.5 py-1.5 text-sm font-medium transition-colors",
           collapsed && "justify-center px-0 py-2",
           isActive
             ? "bg-sidebar-primary text-sidebar-primary-foreground"

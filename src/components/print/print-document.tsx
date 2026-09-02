@@ -29,6 +29,8 @@ interface PrintDocumentProps {
   lines: PrintLine[];
   total: string;
   currency: string;
+  /** Default true — omitting this prop leaves existing callers unchanged. */
+  showPrices?: boolean;
 }
 
 export function PrintDocument({
@@ -39,6 +41,7 @@ export function PrintDocument({
   lines,
   total,
   currency,
+  showPrices = true,
 }: PrintDocumentProps) {
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-black print:p-0">
@@ -88,8 +91,12 @@ export function PrintDocument({
             <th className="py-1 text-left">Наименование</th>
             <th className="py-1 text-right">Кол-во</th>
             <th className="py-1 text-left">Ед.</th>
-            <th className="py-1 text-right">Цена</th>
-            <th className="py-1 text-right">Сумма</th>
+            {showPrices && (
+              <>
+                <th className="py-1 text-right">Цена</th>
+                <th className="py-1 text-right">Сумма</th>
+              </>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -99,16 +106,22 @@ export function PrintDocument({
               <td className="py-1">{line.name}</td>
               <td className="py-1 text-right">{line.quantity}</td>
               <td className="py-1">{line.unit}</td>
-              <td className="py-1 text-right">{line.price}</td>
-              <td className="py-1 text-right">{line.sum}</td>
+              {showPrices && (
+                <>
+                  <td className="py-1 text-right">{line.price}</td>
+                  <td className="py-1 text-right">{line.sum}</td>
+                </>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
 
-      <div className="mt-3 flex justify-end text-base font-semibold">
-        Итого: {total} {currency}
-      </div>
+      {showPrices && (
+        <div className="mt-3 flex justify-end text-base font-semibold">
+          Итого: {total} {currency}
+        </div>
+      )}
 
       <div className="mt-16 grid grid-cols-2 gap-8 text-sm">
         <div>

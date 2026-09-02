@@ -7,6 +7,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { paymentSchema } from "@/lib/validation/payment";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { getOrgBaseCurrency, getRateAt } from "@/lib/currency";
 
 export interface ActionResult {
   error?: string;
@@ -38,8 +39,16 @@ export async function createPayment(
     return { error: "Контрагент не найден" };
   }
 
+  // Block M2: snapshot the rate at posting time so a later exchange-rate
+  // change doesn't retroactively reprice this payment in reports.
+  const baseCurrency = await getOrgBaseCurrency(ctx.orgId);
+  const rateSnapshot =
+    parsed.data.currency === baseCurrency
+      ? null
+      : await getRateAt(ctx.orgId, parsed.data.currency, new Date());
+
   const payment = await prisma.payment.create({
-    data: { ...parsed.data, orgId: ctx.orgId },
+    data: { ...parsed.data, orgId: ctx.orgId, rateSnapshot },
   });
   dispatchWebhookEvent(ctx.orgId, "PAYMENT_CREATED", { paymentId: payment.id });
 

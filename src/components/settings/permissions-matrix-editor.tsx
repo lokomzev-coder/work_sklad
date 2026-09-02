@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -98,29 +100,28 @@ export function PermissionsMatrixEditor({ initial, ceiling, onSave }: Permission
                         {locked ? (
                           <span className="text-sm text-muted-foreground">{SCOPE_LABELS[perm.view]}</span>
                         ) : (
-                          <select
-                            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
-                            value={perm.view}
-                            onChange={(e) => updateResource(key, { view: e.target.value as ScopeLevel })}
-                          >
-                            {scopeOptions.map((s) => (
-                              <option key={s} value={s}>
-                                {SCOPE_LABELS[s]}
-                              </option>
-                            ))}
-                          </select>
+                          <Select value={perm.view} items={SCOPE_LABELS} onValueChange={(v) => updateResource(key, { view: v as ScopeLevel })}>
+                            <SelectTrigger className="h-8 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {scopeOptions.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {SCOPE_LABELS[s]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
                         {locked ? (
                           <span className="text-sm text-muted-foreground">{perm.create ? "Да" : "Нет"}</span>
                         ) : (
-                          <input
-                            type="checkbox"
-                            className="size-4 align-middle"
+                          <Checkbox
                             checked={perm.create}
                             disabled={!cap.create}
-                            onChange={(e) => updateResource(key, { create: e.target.checked })}
+                            onCheckedChange={(checked) => updateResource(key, { create: checked === true })}
                           />
                         )}
                       </TableCell>
@@ -128,29 +129,28 @@ export function PermissionsMatrixEditor({ initial, ceiling, onSave }: Permission
                         {locked ? (
                           <span className="text-sm text-muted-foreground">{SCOPE_LABELS[perm.edit]}</span>
                         ) : (
-                          <select
-                            className="h-8 w-full rounded-md border bg-background px-2 text-sm"
-                            value={perm.edit}
-                            onChange={(e) => updateResource(key, { edit: e.target.value as ScopeLevel })}
-                          >
-                            {editScopeOptions.map((s) => (
-                              <option key={s} value={s}>
-                                {SCOPE_LABELS[s]}
-                              </option>
-                            ))}
-                          </select>
+                          <Select value={perm.edit} items={SCOPE_LABELS} onValueChange={(v) => updateResource(key, { edit: v as ScopeLevel })}>
+                            <SelectTrigger className="h-8 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {editScopeOptions.map((s) => (
+                                <SelectItem key={s} value={s}>
+                                  {SCOPE_LABELS[s]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
                       </TableCell>
                       <TableCell className="text-center">
                         {locked ? (
                           <span className="text-sm text-muted-foreground">{perm.delete ? "Да" : "Нет"}</span>
                         ) : (
-                          <input
-                            type="checkbox"
-                            className="size-4 align-middle"
+                          <Checkbox
                             checked={perm.delete}
                             disabled={!cap.delete}
-                            onChange={(e) => updateResource(key, { delete: e.target.checked })}
+                            onCheckedChange={(checked) => updateResource(key, { delete: checked === true })}
                           />
                         )}
                       </TableCell>

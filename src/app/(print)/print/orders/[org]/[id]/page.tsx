@@ -7,10 +7,13 @@ import { PrintDocument } from "@/components/print/print-document";
 
 export default async function PrintOrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ org: string; id: string }>;
+  searchParams: Promise<{ legalEntityId?: string; prices?: string }>;
 }) {
   const { org, id } = await params;
+  const { legalEntityId, prices } = await searchParams;
   const ctx = await getOrgContext(org);
   if (!can(ctx, "orders", "view")) notFound();
 
@@ -25,10 +28,16 @@ export default async function PrintOrderPage({
   if (!order) notFound();
   if (!(await isRowVisible(ctx, "orders", order.assignedEmployeeId))) notFound();
 
+  // Block M4: ?legalEntityId lets the print dialog override the document's
+  // own issuer for this printout only — doesn't touch order.legalEntityId.
+  const overrideLegalEntity = legalEntityId
+    ? await prisma.legalEntity.findFirst({ where: { id: legalEntityId, orgId: ctx.orgId } })
+    : null;
   const defaultLegalEntity = order.legalEntity
     ? null
     : await prisma.legalEntity.findFirst({ where: { orgId: ctx.orgId, isDefault: true, status: "ACTIVE" } });
-  const issuer = order.legalEntity ?? defaultLegalEntity;
+  const issuer = overrideLegalEntity ?? order.legalEntity ?? defaultLegalEntity;
+  const showPrices = prices !== "0";
 
   const total = order.lineItems.reduce(
     (sum, li) => sum + Number(li.unitPriceSnapshot) * Number(li.quantity),
@@ -68,6 +77,7 @@ export default async function PrintOrderPage({
       }))}
       total={total.toFixed(2)}
       currency={currency}
+      showPrices={showPrices}
     />
   );
 }

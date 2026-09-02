@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -105,17 +106,18 @@ export function CustomFieldDefinitionsManager({
               />
             </TableCell>
             <TableCell>
-              <select
-                className="h-8 rounded-md border bg-background px-2 text-sm"
-                value={type}
-                onChange={(e) => setType(e.target.value as CustomFieldType)}
-              >
-                {Object.entries(TYPE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <Select value={type} items={TYPE_LABELS} onValueChange={(v) => setType(v as CustomFieldType)}>
+                <SelectTrigger className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(TYPE_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </TableCell>
             <TableCell>
               {type === "SELECT" && (

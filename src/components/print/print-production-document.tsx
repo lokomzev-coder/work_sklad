@@ -30,9 +30,11 @@ interface PrintProductionDocumentProps {
   totalCost: string;
   currency: string;
   isPosted: boolean;
+  /** Default true — omitting this prop leaves existing callers unchanged. */
+  showPrices?: boolean;
 }
 
-function LinesTable({ lines }: { lines: PrintLine[] }) {
+function LinesTable({ lines, showPrices }: { lines: PrintLine[]; showPrices: boolean }) {
   return (
     <table className="w-full border-collapse text-sm">
       <thead>
@@ -41,8 +43,12 @@ function LinesTable({ lines }: { lines: PrintLine[] }) {
           <th className="py-1 text-left">Наименование</th>
           <th className="py-1 text-right">Кол-во</th>
           <th className="py-1 text-left">Ед.</th>
-          <th className="py-1 text-right">Цена</th>
-          <th className="py-1 text-right">Сумма</th>
+          {showPrices && (
+            <>
+              <th className="py-1 text-right">Цена</th>
+              <th className="py-1 text-right">Сумма</th>
+            </>
+          )}
         </tr>
       </thead>
       <tbody>
@@ -52,8 +58,12 @@ function LinesTable({ lines }: { lines: PrintLine[] }) {
             <td className="py-1">{line.name}</td>
             <td className="py-1 text-right">{line.quantity}</td>
             <td className="py-1">{line.unit}</td>
-            <td className="py-1 text-right">{line.price}</td>
-            <td className="py-1 text-right">{line.sum}</td>
+            {showPrices && (
+              <>
+                <td className="py-1 text-right">{line.price}</td>
+                <td className="py-1 text-right">{line.sum}</td>
+              </>
+            )}
           </tr>
         ))}
       </tbody>
@@ -74,6 +84,7 @@ export function PrintProductionDocument({
   totalCost,
   currency,
   isPosted,
+  showPrices = true,
 }: PrintProductionDocumentProps) {
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-black print:p-0">
@@ -128,14 +139,16 @@ export function PrintProductionDocument({
       )}
 
       <h2 className="mb-1 mt-4 text-sm font-semibold uppercase text-gray-600">Списано сырья</h2>
-      <LinesTable lines={consumedLines} />
+      <LinesTable lines={consumedLines} showPrices={showPrices} />
 
       <h2 className="mb-1 mt-4 text-sm font-semibold uppercase text-gray-600">Выпущено готовой продукции</h2>
-      <LinesTable lines={outputLines} />
+      <LinesTable lines={outputLines} showPrices={showPrices} />
 
-      <div className="mt-3 flex justify-end text-base font-semibold">
-        Себестоимость выпуска: {totalCost} {currency}
-      </div>
+      {showPrices && (
+        <div className="mt-3 flex justify-end text-base font-semibold">
+          Себестоимость выпуска: {totalCost} {currency}
+        </div>
+      )}
 
       <div className="mt-16 grid grid-cols-2 gap-8 text-sm">
         <div>

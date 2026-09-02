@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -152,33 +153,33 @@ export function DocumentStatusTransitionsManager({
             ))}
             <TableRow>
               <TableCell>
-                <select
-                  className="h-8 rounded-md border bg-background px-2 text-sm"
-                  value={fromStatusId}
-                  onChange={(e) => setFromStatusId(e.target.value)}
-                >
-                  <option value="">Из статуса...</option>
-                  {statuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                      {restrictedFromIds.has(s.id) ? " (ограничен)" : ""}
-                    </option>
-                  ))}
-                </select>
+                <Select value={fromStatusId} items={nameById} onValueChange={(v) => setFromStatusId(v ?? "")}>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="Из статуса..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statuses.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                        {restrictedFromIds.has(s.id) ? " (ограничен)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </TableCell>
               <TableCell>
-                <select
-                  className="h-8 rounded-md border bg-background px-2 text-sm"
-                  value={toStatusId}
-                  onChange={(e) => setToStatusId(e.target.value)}
-                >
-                  <option value="">В статус...</option>
-                  {statuses.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
+                <Select value={toStatusId} items={nameById} onValueChange={(v) => setToStatusId(v ?? "")}>
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue placeholder="В статус..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {statuses.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </TableCell>
               <TableCell>
                 <div className="flex flex-col gap-1.5">

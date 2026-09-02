@@ -7,10 +7,14 @@ import { PrintProductionDocument } from "@/components/print/print-production-doc
 
 export default async function PrintProductionOrderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ org: string; id: string }>;
+  searchParams: Promise<{ prices?: string }>;
 }) {
   const { org, id } = await params;
+  const { prices } = await searchParams;
+  const showPrices = prices !== "0";
   const ctx = await getOrgContext(org);
   if (!can(ctx, "productionOrders", "view")) notFound();
 
@@ -141,6 +145,7 @@ export default async function PrintProductionOrderPage({
       totalCost={totalCost.toFixed(2)}
       currency={currency}
       isPosted={isPosted}
+      showPrices={showPrices}
     />
   );
 }

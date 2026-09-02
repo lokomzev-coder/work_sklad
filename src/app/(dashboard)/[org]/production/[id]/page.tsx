@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { isRowVisible } from "@/lib/scope";
@@ -12,7 +12,7 @@ import { ProductionOrderStatusSelect } from "@/components/production/production-
 import { ProductionOrderCompletePanel } from "@/components/production/production-order-complete-panel";
 import { ProductionStagesPanel } from "@/components/production/production-stages-panel";
 import { ProductionOrderHistory } from "@/components/production/production-order-history";
-import { PrintButton } from "@/components/print/print-button";
+import { PrintDialog } from "@/components/print/print-dialog";
 
 export default async function ProductionOrderDetailPage({
   params,
@@ -45,8 +45,11 @@ export default async function ProductionOrderDetailPage({
 
   const isStaged = !!productionOrder.techCard.techProcessId;
 
-  const [techCards, stores, employees, statusOptions, materialsBalances, customFieldDefs, customFieldValues, movements, stages] =
-    await Promise.all([
+  // Block: split into two smaller sequential batches (was one 9-wide
+  // Promise.all) — same fix as orders/[id]/page.tsx, see its comment for
+  // why. withDbRetry on each half — safe, every query is read-only.
+  const [techCards, stores, employees, statusOptions, materialsBalances] = await withDbRetry(() =>
+    Promise.all([
       prisma.techCard.findMany({
         where: { orgId: ctx.orgId, status: "ACTIVE" },
         include: { outputItem: true },
@@ -60,6 +63,11 @@ export default async function ProductionOrderDetailPage({
         employeeId: ctx.employeeId,
       }),
       getStockBalances(ctx.orgId, { storeId: productionOrder.materialsStoreId }),
+    ]),
+  );
+
+  const [customFieldDefs, customFieldValues, movements, stages] = await withDbRetry(() =>
+    Promise.all([
       listCustomFieldDefinitions(ctx.orgId, "PRODUCTION_ORDER"),
       getCustomFieldValues(productionOrder.id),
       prisma.stockMovement.findMany({
@@ -74,7 +82,8 @@ export default async function ProductionOrderDetailPage({
             orderBy: { position: "asc" },
           })
         : Promise.resolve([]),
-    ]);
+    ]),
+  );
 
   const balanceByItem = new Map(materialsBalances.map((b) => [b.catalogItemId, Number(b.quantity)]));
   const outputQuantity = Number(productionOrder.techCard.outputQuantity);
@@ -129,7 +138,7 @@ export default async function ProductionOrderDetailPage({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Задание №{productionOrder.number}</h1>
         <div className="flex items-center gap-2">
-          <PrintButton href={`/print/production-orders/${org}/${productionOrder.id}`} />
+          <PrintDialog documentType="productionOrder" orgSlug={org} documentId={productionOrder.id} />
           <ProductionOrderStatusSelect
             orgSlug={org}
             productionOrderId={productionOrder.id}

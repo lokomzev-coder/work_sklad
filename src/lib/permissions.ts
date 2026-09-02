@@ -26,6 +26,8 @@ export type Resource =
   | "catalog"
   | "orders"
   | "purchaseOrders"
+  | "invoicesOut"
+  | "invoicesIn"
   | "contracts"
   | "payments"
   | "salesChannels"
@@ -68,7 +70,7 @@ const VIEW_ALL: ResourcePermission = { view: "ALL", create: false, edit: "NONE",
 function allResources(fill: ResourcePermission): Record<Resource, ResourcePermission> {
   const resources: Resource[] = [
     "dashboard", "reports", "clients", "catalog",
-    "orders", "purchaseOrders", "contracts", "payments", "salesChannels",
+    "orders", "purchaseOrders", "invoicesOut", "invoicesIn", "contracts", "payments", "salesChannels",
     "warehouse", "techCards", "techProcesses", "productionOrders",
     "employees", "membership", "vault",
     "documentStatuses", "customFields", "webhooks", "legalEntities", "exchangeRates", "customRoles",
@@ -108,6 +110,12 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
     // default should genuinely narrow.
     orders: ALL_PERM,
     purchaseOrders: ALL_PERM,
+    // Block M5: same bucket as orders/purchaseOrders/payments — an invoice
+    // is a side artifact of a document this role can already fully edit,
+    // using money-recording capability it already has via `payments`, not a
+    // new authority boundary of its own.
+    invoicesOut: ALL_PERM,
+    invoicesIn: ALL_PERM,
     contracts: ALL_PERM,
     payments: ALL_PERM,
     salesChannels: ALL_PERM,

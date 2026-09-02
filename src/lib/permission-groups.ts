@@ -1,7 +1,7 @@
 import type { Resource } from "@/lib/permissions";
 
 /** Client-safe metadata for the permissions matrix editor (Block I2.1) —
- * groups the 22 resources the way the app's own nav is organized, and gives
+ * groups the resources the way the app's own nav is organized, and gives
  * each a Russian label. Kept separate from lib/permissions.ts so client
  * components can import labels without pulling in server-only code. */
 export interface PermissionGroup {
@@ -22,6 +22,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     resources: [
       { key: "orders", label: "Заказы" },
       { key: "purchaseOrders", label: "Заказы поставщику" },
+      { key: "invoicesOut", label: "Счета покупателям" },
+      { key: "invoicesIn", label: "Счета поставщиков" },
       { key: "contracts", label: "Договоры" },
       { key: "payments", label: "Платежи" },
       { key: "salesChannels", label: "Каналы продаж" },

@@ -19,6 +19,8 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   orders: "Заказы",
   channels: "Каналы продаж",
   "purchase-orders": "Заказы поставщику",
+  "invoices-out": "Счета покупателям",
+  "invoices-in": "Счета поставщиков",
   payments: "Платежи",
   contracts: "Договоры",
   reports: "Отчёты",

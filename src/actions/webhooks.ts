@@ -66,3 +66,22 @@ export async function deleteWebhook(orgSlug: string, webhookId: string) {
 
   revalidatePath(`/${orgSlug}/settings/webhooks`);
 }
+
+/**
+ * Block M3: jumps a pending retry to "due now" instead of waiting out its
+ * scheduled backoff — the next /api/cron/webhook-retries invocation picks
+ * it up. No-op (silently) if the delivery has no pending retry (already
+ * succeeded, permanently failed, or never failed at all) — nothing to
+ * escalate in that case, not an error.
+ */
+export async function retryWebhookDeliveryNow(orgSlug: string, deliveryId: string) {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "webhooks", "edit");
+
+  await prisma.webhookDelivery.updateMany({
+    where: { id: deliveryId, nextRetryAt: { not: null }, webhook: { orgId: ctx.orgId } },
+    data: { nextRetryAt: new Date() },
+  });
+
+  revalidatePath(`/${orgSlug}/settings/webhooks`);
+}

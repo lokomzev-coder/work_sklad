@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CustomFieldDef } from "@/lib/custom-fields";
 
@@ -31,19 +32,22 @@ export function CustomFieldsSection({ defs, values }: CustomFieldsSectionProps) 
                   <Checkbox id={name} name={name} defaultChecked={value === "true"} />
                 </div>
               ) : def.type === "SELECT" ? (
-                <select
-                  id={name}
+                <Select
                   name={name}
-                  defaultValue={value}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  defaultValue={value || undefined}
+                  items={Object.fromEntries(def.options.map((o) => [o, o]))}
                 >
-                  <option value="">—</option>
-                  {def.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger id={name} className="w-full">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {def.options.map((opt) => (
+                      <SelectItem key={opt} value={opt}>
+                        {opt}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : (
                 <Input
                   id={name}

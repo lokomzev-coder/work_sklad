@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { OrderForm } from "@/components/orders/order-form";
 import { variantLabel } from "@/lib/catalog-variants";
@@ -12,30 +12,35 @@ export default async function NewOrderPage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [clients, employees, catalogItems, contracts, salesChannels, legalEntities, customFieldDefs] = await Promise.all([
-    prisma.client.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { name: "asc" },
-    }),
-    prisma.employee.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { fullName: "asc" },
-    }),
-    prisma.catalogItem.findMany({
-      where: { orgId: ctx.orgId, status: "ACTIVE" },
-      orderBy: { name: "asc" },
-      include: {
-        variants: {
-          where: { status: "ACTIVE" },
-          include: { values: { include: { characteristic: true } } },
+  // withDbRetry (lib/prisma.ts): see orders/[id]/page.tsx's comment — the
+  // local `prisma dev` proxy can choke on a burst of simultaneous new
+  // connections; safe here, every query is read-only.
+  const [clients, employees, catalogItems, contracts, salesChannels, legalEntities, customFieldDefs] = await withDbRetry(() =>
+    Promise.all([
+      prisma.client.findMany({
+        where: { orgId: ctx.orgId, status: "ACTIVE" },
+        orderBy: { name: "asc" },
+      }),
+      prisma.employee.findMany({
+        where: { orgId: ctx.orgId, status: "ACTIVE" },
+        orderBy: { fullName: "asc" },
+      }),
+      prisma.catalogItem.findMany({
+        where: { orgId: ctx.orgId, status: "ACTIVE" },
+        orderBy: { name: "asc" },
+        include: {
+          variants: {
+            where: { status: "ACTIVE" },
+            include: { values: { include: { characteristic: true } } },
+          },
         },
-      },
-    }),
-    prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
-    prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
-    prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    listCustomFieldDefinitions(ctx.orgId, "ORDER"),
-  ]);
+      }),
+      prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
+      prisma.salesChannel.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+      prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      listCustomFieldDefinitions(ctx.orgId, "ORDER"),
+    ]),
+  );
 
   return (
     <div className="flex max-w-2xl flex-col gap-4">

@@ -22,7 +22,7 @@ export async function getClientBalance(orgId: string, clientId: string): Promise
     prisma.order.findMany({ where: { orgId, clientId }, include: { lineItems: true } }),
     prisma.payment.findMany({
       where: { orgId, counterpartyId: clientId, direction: "IN" },
-      select: { amount: true, currency: true },
+      select: { amount: true, currency: true, rateSnapshot: true },
     }),
     prisma.purchaseOrder.findMany({
       where: { orgId, supplierId: clientId },
@@ -30,13 +30,18 @@ export async function getClientBalance(orgId: string, clientId: string): Promise
     }),
     prisma.payment.findMany({
       where: { orgId, counterpartyId: clientId, direction: "OUT" },
-      select: { amount: true, currency: true },
+      select: { amount: true, currency: true, rateSnapshot: true },
     }),
     getOrgBaseCurrency(orgId),
     getLatestRates(orgId),
   ]);
 
+  // orderedTotal/purchasedTotal (OrderLineItem/PurchaseOrderLineItem-based)
+  // stay on today's rate — see ROADMAP Block M2's documented scope boundary.
+  // convertPayment (Block M2) prefers each Payment's own rateSnapshot.
   const convert = (amount: number, currency: string) => toBase(rates, baseCurrency, amount, currency);
+  const convertPayment = (amount: number, currency: string, rateSnapshot: unknown) =>
+    toBase(rates, baseCurrency, amount, currency, rateSnapshot ? Number(rateSnapshot) : null);
 
   const orderedTotal = orders.reduce(
     (sum, o) =>
@@ -48,8 +53,14 @@ export async function getClientBalance(orgId: string, clientId: string): Promise
       sum + po.lineItems.reduce((s, li) => s + convert(Number(li.unitPriceSnapshot) * Number(li.quantity), li.currency), 0),
     0,
   );
-  const paymentsInTotal = paymentsIn.reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
-  const paymentsOutTotal = paymentsOut.reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+  const paymentsInTotal = paymentsIn.reduce(
+    (sum, p) => sum + convertPayment(Number(p.amount), p.currency, p.rateSnapshot),
+    0,
+  );
+  const paymentsOutTotal = paymentsOut.reduce(
+    (sum, p) => sum + convertPayment(Number(p.amount), p.currency, p.rateSnapshot),
+    0,
+  );
 
   return {
     receivable: orderedTotal - paymentsInTotal,

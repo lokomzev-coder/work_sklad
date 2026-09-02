@@ -6,6 +6,7 @@ import { ArrowUp, ArrowDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table,
   TableHeader,
@@ -173,17 +174,22 @@ export function DocumentStatusManager({
               />
             </TableCell>
             <TableCell>
-              <select
-                className="h-8 rounded-md border bg-background px-2 text-sm"
+              <Select
                 value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
+                items={Object.fromEntries(COLORS.map((c) => [c, c]))}
+                onValueChange={(v) => setNewColor(v ?? COLORS[0])}
               >
-                {COLORS.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="h-8 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {COLORS.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </TableCell>
             <TableCell className="text-right">
               <Button type="button" size="sm" disabled={isPending || !newName.trim()} onClick={handleCreate}>

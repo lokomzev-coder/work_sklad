@@ -1,5 +1,6 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getLatestRates, getOrgBaseCurrency, toBase } from "@/lib/currency";
+import { getLastPurchaseUnitCosts } from "@/lib/production-cost";
 
 export interface DateRange {
   from?: Date;
@@ -95,32 +96,41 @@ export interface MoneyReport {
 export async function getMoneyReport(orgId: string, range: DateRange = {}): Promise<MoneyReport> {
   const createdAt = dateFilter(range);
 
-  const [periodPayments, allTimePayments, baseCurrency, rates] = await Promise.all([
+  // withDbRetry (lib/prisma.ts): see orders/[id]/page.tsx's comment — local
+  // `prisma dev` proxy can drop a burst of simultaneous new connections;
+  // safe here, every query is read-only.
+  const [periodPayments, allTimePayments, baseCurrency, rates] = await withDbRetry(() => Promise.all([
     prisma.payment.findMany({
       where: { orgId, ...(createdAt ? { createdAt } : {}) },
       include: { counterparty: { select: { name: true } } },
       orderBy: { createdAt: "desc" },
     }),
-    prisma.payment.findMany({ where: { orgId }, select: { direction: true, amount: true, currency: true } }),
+    prisma.payment.findMany({
+      where: { orgId },
+      select: { direction: true, amount: true, currency: true, rateSnapshot: true },
+    }),
     getOrgBaseCurrency(orgId),
     getLatestRates(orgId),
-  ]);
+  ]));
 
-  const convert = (amount: number, currency: string) => toBase(rates, baseCurrency, amount, currency);
+  // Block M2: rateSnapshot (captured at posting time) takes priority over
+  // today's rate — see toBase's own comment.
+  const convert = (amount: number, currency: string, rateSnapshot: unknown) =>
+    toBase(rates, baseCurrency, amount, currency, rateSnapshot ? Number(rateSnapshot) : null);
 
   const inTotal = allTimePayments
     .filter((p) => p.direction === "IN")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency, p.rateSnapshot), 0);
   const outTotal = allTimePayments
     .filter((p) => p.direction === "OUT")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency, p.rateSnapshot), 0);
 
   const periodIn = periodPayments
     .filter((p) => p.direction === "IN")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency, p.rateSnapshot), 0);
   const periodOut = periodPayments
     .filter((p) => p.direction === "OUT")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency, p.rateSnapshot), 0);
 
   return {
     rows: periodPayments.map((p) => ({
@@ -147,49 +157,99 @@ export interface PnlReport {
 }
 
 /**
- * Deliberately simplified P&L: revenue is what was actually shipped (DEMAND
- * lines, at the order's snapshotted sale price), cost of goods is what was
- * actually received in the period — either bought (SUPPLY lines, at the PO's
- * snapshotted cost) or manufactured (PRODUCTION_OUTPUT lines, at the costed
- * unitPriceSnapshot computed in completeProductionOrder from consumed
- * materials + techCard.laborCost). PRODUCTION_CONSUME is deliberately
- * excluded here — the raw materials it consumes were already counted once,
- * when they were originally bought (SUPPLY); counting them again as they're
- * consumed into production would double the cost. This is NOT proper COGS
- * matching (no FIFO/weighted-average costing tying a specific sold unit to
- * the batch it was purchased or produced in) — it's a rough period P&L, good
- * enough for a MVP "Деньги/P&L" view. Amounts are converted to the org's base
- * currency (lib/currency.ts) before summing.
+ * Revenue is what was actually shipped (DEMAND lines, at the order's
+ * snapshotted sale price). Cost of goods for the purchased-goods flow is now
+ * (Block M1) matched FIFO to the specific StockBatch(es) each DEMAND line
+ * drew from (see lib/stock-batches.ts::allocateFifo, called from
+ * createDemand) — not "everything bought in the period" like before. Any
+ * portion of a sale that couldn't be matched to a batch (pre-M1 history,
+ * manual ENTER stock with no purchase cost basis, or overselling beyond
+ * tracked receipts) falls back to the item's last-known purchase price via
+ * getLastPurchaseUnitCosts (same helper production costing already uses —
+ * not a new pricing concept). PRODUCTION_OUTPUT (manufactured goods) is
+ * deliberately NOT part of the FIFO batching — a documented Block M1 scope
+ * boundary, not an oversight — so it keeps the old period-received
+ * approximation. PRODUCTION_CONSUME is deliberately excluded — the raw
+ * materials it consumes were already counted once, when originally bought;
+ * counting them again as they're consumed into production would double the
+ * cost. Amounts are converted to the org's base currency (lib/currency.ts)
+ * before summing, using each line's rateSnapshot (Block M2) — the rate at
+ * the moment it was posted — when available, not today's rate.
  */
 export async function getPnlReport(orgId: string, range: DateRange = {}): Promise<PnlReport> {
   const createdAt = dateFilter(range);
 
-  const [demandLines, supplyLines, productionOutputLines, baseCurrency, rates] = await Promise.all([
-    prisma.stockMovementLine.findMany({
-      where: { movement: { orgId, type: "DEMAND", ...(createdAt ? { createdAt } : {}) } },
-      select: { quantity: true, unitPriceSnapshot: true, currency: true },
-    }),
-    prisma.stockMovementLine.findMany({
-      where: { movement: { orgId, type: "SUPPLY", ...(createdAt ? { createdAt } : {}) } },
-      select: { quantity: true, unitPriceSnapshot: true, currency: true },
-    }),
-    prisma.stockMovementLine.findMany({
-      where: { movement: { orgId, type: "PRODUCTION_OUTPUT", ...(createdAt ? { createdAt } : {}) } },
-      select: { quantity: true, unitPriceSnapshot: true, currency: true },
-    }),
-    getOrgBaseCurrency(orgId),
-    getLatestRates(orgId),
-  ]);
+  // withDbRetry: see getMoneyReport's comment above.
+  const [demandLines, productionOutputLines, baseCurrency, rates] = await withDbRetry(() =>
+    Promise.all([
+      prisma.stockMovementLine.findMany({
+        where: { movement: { orgId, type: "DEMAND", ...(createdAt ? { createdAt } : {}) } },
+        select: {
+          catalogItemId: true,
+          quantity: true,
+          unitPriceSnapshot: true,
+          currency: true,
+          rateSnapshot: true,
+          batchAllocations: { select: { quantity: true, unitCost: true, currency: true, rateSnapshot: true } },
+        },
+      }),
+      prisma.stockMovementLine.findMany({
+        where: { movement: { orgId, type: "PRODUCTION_OUTPUT", ...(createdAt ? { createdAt } : {}) } },
+        select: { quantity: true, unitPriceSnapshot: true, currency: true, rateSnapshot: true },
+      }),
+      getOrgBaseCurrency(orgId),
+      getLatestRates(orgId),
+    ]),
+  );
 
-  const sumLines = (lines: { quantity: unknown; unitPriceSnapshot: unknown; currency: string | null }[]) =>
+  // Block M2: rateSnapshot (captured at posting time) takes priority over
+  // today's rate — see toBase's own comment.
+  const sumLines = (
+    lines: { quantity: unknown; unitPriceSnapshot: unknown; currency: string | null; rateSnapshot: unknown }[],
+  ) =>
     lines.reduce(
       (sum, l) =>
-        sum + toBase(rates, baseCurrency, Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0), l.currency ?? baseCurrency),
+        sum +
+        toBase(
+          rates,
+          baseCurrency,
+          Number(l.quantity) * Number(l.unitPriceSnapshot ?? 0),
+          l.currency ?? baseCurrency,
+          l.rateSnapshot ? Number(l.rateSnapshot) : null,
+        ),
       0,
     );
 
   const revenue = sumLines(demandLines);
-  const costOfGoods = sumLines(supplyLines) + sumLines(productionOutputLines);
+
+  // Block M1: FIFO-matched cost for the portion of each sale that has a
+  // batch allocation, plus a fallback for whatever doesn't.
+  let batchMatchedCost = 0;
+  const uncoveredByItem = new Map<string, number>();
+  for (const line of demandLines) {
+    const allocatedQty = line.batchAllocations.reduce((sum, a) => sum + Number(a.quantity), 0);
+    for (const a of line.batchAllocations) {
+      batchMatchedCost += toBase(
+        rates,
+        baseCurrency,
+        Number(a.quantity) * Number(a.unitCost),
+        a.currency ?? baseCurrency,
+        a.rateSnapshot ? Number(a.rateSnapshot) : null,
+      );
+    }
+    const uncovered = Number(line.quantity) - allocatedQty;
+    if (uncovered > 0) {
+      uncoveredByItem.set(line.catalogItemId, (uncoveredByItem.get(line.catalogItemId) ?? 0) + uncovered);
+    }
+  }
+  const fallbackCosts = await getLastPurchaseUnitCosts(orgId, [...uncoveredByItem.keys()]);
+  let fallbackCost = 0;
+  for (const [catalogItemId, qty] of uncoveredByItem) {
+    const unitCost = fallbackCosts.get(catalogItemId)?.unitCost ?? 0;
+    fallbackCost += toBase(rates, baseCurrency, qty * unitCost, baseCurrency);
+  }
+
+  const costOfGoods = batchMatchedCost + fallbackCost + sumLines(productionOutputLines);
 
   return { revenue, costOfGoods, grossMargin: revenue - costOfGoods, baseCurrency };
 }
@@ -272,59 +332,75 @@ export async function getOverviewReport(orgId: string, range: DateRange = {}): P
   const prevTo = new Date(from.getTime() - 1);
   const prevFrom = new Date(prevTo.getTime() - periodMs);
 
-  const [
-    orders,
-    prevOrders,
-    payments,
-    allTimePayments,
-    stockLines,
-    activePurchaseOrders,
-    baseCurrency,
-    rates,
-    topClients,
-    turnover,
-  ] = await Promise.all([
-    prisma.order.findMany({
-      where: { orgId, createdAt: { gte: from, lte: to } },
-      select: {
-        createdAt: true,
-        status: { select: { name: true, color: true } },
-        lineItems: { select: { quantity: true, unitPriceSnapshot: true, currency: true } },
-      },
-    }),
-    prisma.order.findMany({
-      where: { orgId, createdAt: { gte: prevFrom, lte: prevTo } },
-      select: { lineItems: { select: { quantity: true, unitPriceSnapshot: true, currency: true } } },
-    }),
-    prisma.payment.findMany({
-      where: { orgId, createdAt: { gte: from, lte: to } },
-      select: { createdAt: true, direction: true, amount: true, currency: true },
-    }),
-    prisma.payment.findMany({ where: { orgId }, select: { direction: true, amount: true, currency: true } }),
-    prisma.stockMovementLine.findMany({
-      where: { movement: { orgId, createdAt: { gte: from, lte: to } } },
-      select: { quantity: true, movement: { select: { type: true } } },
-    }),
-    prisma.purchaseOrder.count({ where: { orgId, status: { isFinal: false } } }),
-    getOrgBaseCurrency(orgId),
-    getLatestRates(orgId),
-    getSalesByClientReport(orgId),
-    getTurnoverReport(orgId, range),
-  ]);
+  // Block: split into two sequential batches + withDbRetry each (see
+  // orders/[id]/page.tsx's comment for why) — the second batch's
+  // getSalesByClientReport/getTurnoverReport calls run their OWN internal
+  // Promise.all fan-out, so leaving them inside this same outer Promise.all
+  // meant the true peak concurrent-connection count was well above the
+  // visible 10 array items (closer to ~15, counting the nested queries and
+  // the getOrgBaseCurrency/getLatestRates calls duplicated between here and
+  // getSalesByClientReport's own batch). Running the raw queries first and
+  // the nested-report calls after — instead of all at once — keeps the peak
+  // lower without changing any of the report math.
+  const [orders, prevOrders, payments, allTimePayments, stockLines, activePurchaseOrders] = await withDbRetry(() =>
+    Promise.all([
+      prisma.order.findMany({
+        where: { orgId, createdAt: { gte: from, lte: to } },
+        select: {
+          createdAt: true,
+          status: { select: { name: true, color: true } },
+          lineItems: { select: { quantity: true, unitPriceSnapshot: true, currency: true } },
+        },
+      }),
+      prisma.order.findMany({
+        where: { orgId, createdAt: { gte: prevFrom, lte: prevTo } },
+        select: { lineItems: { select: { quantity: true, unitPriceSnapshot: true, currency: true } } },
+      }),
+      prisma.payment.findMany({
+        where: { orgId, createdAt: { gte: from, lte: to } },
+        select: { createdAt: true, direction: true, amount: true, currency: true, rateSnapshot: true },
+      }),
+      prisma.payment.findMany({
+        where: { orgId },
+        select: { direction: true, amount: true, currency: true, rateSnapshot: true },
+      }),
+      prisma.stockMovementLine.findMany({
+        where: { movement: { orgId, createdAt: { gte: from, lte: to } } },
+        select: { quantity: true, movement: { select: { type: true } } },
+      }),
+      prisma.purchaseOrder.count({ where: { orgId, status: { isFinal: false } } }),
+    ]),
+  );
 
-  const convert = (amount: number, currency: string) => toBase(rates, baseCurrency, amount, currency);
+  const [baseCurrency, rates, topClients, turnover] = await withDbRetry(() =>
+    Promise.all([
+      getOrgBaseCurrency(orgId),
+      getLatestRates(orgId),
+      getSalesByClientReport(orgId),
+      getTurnoverReport(orgId, range),
+    ]),
+  );
+
+  // orderTotal (OrderLineItem-based, no rateSnapshot — see ROADMAP Block M2's
+  // documented scope boundary) stays on today's rate. convertPayment (Block
+  // M2) prefers each Payment's own rateSnapshot when present.
   const orderTotal = (lineItems: { quantity: unknown; unitPriceSnapshot: unknown; currency: string }[]) =>
-    lineItems.reduce((sum, li) => sum + convert(Number(li.unitPriceSnapshot) * Number(li.quantity), li.currency), 0);
+    lineItems.reduce(
+      (sum, li) => sum + toBase(rates, baseCurrency, Number(li.unitPriceSnapshot) * Number(li.quantity), li.currency),
+      0,
+    );
+  const convertPayment = (amount: number, currency: string, rateSnapshot: unknown) =>
+    toBase(rates, baseCurrency, amount, currency, rateSnapshot ? Number(rateSnapshot) : null);
 
   const revenue = orders.reduce((sum, o) => sum + orderTotal(o.lineItems), 0);
   const prevRevenue = prevOrders.reduce((sum, o) => sum + orderTotal(o.lineItems), 0);
 
   const inTotal = allTimePayments
     .filter((p) => p.direction === "IN")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convertPayment(Number(p.amount), p.currency, p.rateSnapshot), 0);
   const outTotal = allTimePayments
     .filter((p) => p.direction === "OUT")
-    .reduce((sum, p) => sum + convert(Number(p.amount), p.currency), 0);
+    .reduce((sum, p) => sum + convertPayment(Number(p.amount), p.currency, p.rateSnapshot), 0);
 
   const days = eachDay(from, to);
   const dailyMap = new Map<string, DailyPoint>(days.map((d) => [d, { date: d, revenue: 0, cashIn: 0, cashOut: 0 }]));
@@ -335,7 +411,7 @@ export async function getOverviewReport(orgId: string, range: DateRange = {}): P
   for (const payment of payments) {
     const point = dailyMap.get(dayKey(payment.createdAt));
     if (!point) continue;
-    const amount = convert(Number(payment.amount), payment.currency);
+    const amount = convertPayment(Number(payment.amount), payment.currency, payment.rateSnapshot);
     if (payment.direction === "IN") point.cashIn += amount;
     else point.cashOut += amount;
   }
@@ -391,23 +467,26 @@ export interface ClientSalesRow {
 }
 
 export async function getSalesByClientReport(orgId: string): Promise<ClientSalesRow[]> {
-  const [clients, paymentsIn, baseCurrency, rates] = await Promise.all([
-    prisma.client.findMany({
-      where: { orgId, orders: { some: {} } },
-      include: { orders: { include: { lineItems: true } } },
-      orderBy: { name: "asc" },
-    }),
-    prisma.payment.findMany({
-      where: { orgId, direction: "IN" },
-      select: { counterpartyId: true, amount: true, currency: true },
-    }),
-    getOrgBaseCurrency(orgId),
-    getLatestRates(orgId),
-  ]);
+  // withDbRetry: see getMoneyReport's comment above.
+  const [clients, paymentsIn, baseCurrency, rates] = await withDbRetry(() =>
+    Promise.all([
+      prisma.client.findMany({
+        where: { orgId, orders: { some: {} } },
+        include: { orders: { include: { lineItems: true } } },
+        orderBy: { name: "asc" },
+      }),
+      prisma.payment.findMany({
+        where: { orgId, direction: "IN" },
+        select: { counterpartyId: true, amount: true, currency: true, rateSnapshot: true },
+      }),
+      getOrgBaseCurrency(orgId),
+      getLatestRates(orgId),
+    ]),
+  );
 
   const paymentsByClient = new Map<string, number>();
   for (const p of paymentsIn) {
-    const converted = toBase(rates, baseCurrency, Number(p.amount), p.currency);
+    const converted = toBase(rates, baseCurrency, Number(p.amount), p.currency, p.rateSnapshot ? Number(p.rateSnapshot) : null);
     paymentsByClient.set(p.counterpartyId, (paymentsByClient.get(p.counterpartyId) ?? 0) + converted);
   }
 

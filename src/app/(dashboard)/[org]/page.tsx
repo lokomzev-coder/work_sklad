@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Users, Contact, Package, ShoppingCart, DollarSign } from "lucide-react";
-import { prisma } from "@/lib/prisma";
+import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { buildScopeWhere, resolveGroupMemberIds } from "@/lib/scope";
@@ -53,54 +53,59 @@ export default async function OrgDashboardPage({
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - (TREND_DAYS - 1)),
   );
 
-  const [
-    employeeCount,
-    clientCount,
-    catalogCount,
-    orderCount,
-    recentOrders,
-    allOrdersForBreakdown,
-    trendLines,
-    revenueRows,
-    baseCurrency,
-  ] = await Promise.all([
-    prisma.employee.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-    prisma.client.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-    prisma.catalogItem.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
-    prisma.order.count({ where: ordersWhere }),
-    prisma.order.findMany({
-      where: ordersWhere,
-      orderBy: { number: "desc" },
-      take: 5,
-      include: { client: true, lineItems: true, status: true },
-    }),
-    prisma.order.findMany({
-      where: ordersWhere,
-      select: { status: { select: { name: true, color: true } } },
-    }),
-    prisma.orderLineItem.findMany({
-      where: { order: { ...ordersWhere, createdAt: { gte: trendFrom } } },
-      select: {
-        quantity: true,
-        unitPriceSnapshot: true,
-        order: { select: { createdAt: true } },
-      },
-    }),
-    scopedEmployeeIds
-      ? prisma.$queryRaw<{ total: string | null }[]>`
-          SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
-          FROM "OrderLineItem" oli
-          JOIN "Order" o ON o.id = oli."orderId"
-          WHERE o."orgId" = ${ctx.orgId} AND o."assignedEmployeeId" = ANY(${scopedEmployeeIds})
-        `
-      : prisma.$queryRaw<{ total: string | null }[]>`
-          SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
-          FROM "OrderLineItem" oli
-          JOIN "Order" o ON o.id = oli."orderId"
-          WHERE o."orgId" = ${ctx.orgId}
-        `,
-    getOrgBaseCurrency(ctx.orgId),
-  ]);
+  // Block: split into two smaller sequential batches instead of one 9-wide
+  // Promise.all. The local `prisma dev` proxy doesn't just go stale on idle
+  // sockets (see the pool comment in lib/prisma.ts) — it also chokes when
+  // ~9-10 brand-new connections are opened in the same instant, failing with
+  // "Server has closed the connection" even on an immediate retry of the
+  // exact same burst. Two ~4-5-wide batches roughly halve the peak
+  // concurrent connection-open spike; each is still wrapped in withDbRetry
+  // as a second layer, safe here since every query is read-only.
+  const [employeeCount, clientCount, catalogCount, orderCount, recentOrders] = await withDbRetry(() =>
+    Promise.all([
+      prisma.employee.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+      prisma.client.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+      prisma.catalogItem.count({ where: { orgId: ctx.orgId, status: "ACTIVE" } }),
+      prisma.order.count({ where: ordersWhere }),
+      prisma.order.findMany({
+        where: ordersWhere,
+        orderBy: { number: "desc" },
+        take: 5,
+        include: { client: true, lineItems: true, status: true },
+      }),
+    ]),
+  );
+
+  const [allOrdersForBreakdown, trendLines, revenueRows, baseCurrency] = await withDbRetry(() =>
+    Promise.all([
+      prisma.order.findMany({
+        where: ordersWhere,
+        select: { status: { select: { name: true, color: true } } },
+      }),
+      prisma.orderLineItem.findMany({
+        where: { order: { ...ordersWhere, createdAt: { gte: trendFrom } } },
+        select: {
+          quantity: true,
+          unitPriceSnapshot: true,
+          order: { select: { createdAt: true } },
+        },
+      }),
+      scopedEmployeeIds
+        ? prisma.$queryRaw<{ total: string | null }[]>`
+            SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
+            FROM "OrderLineItem" oli
+            JOIN "Order" o ON o.id = oli."orderId"
+            WHERE o."orgId" = ${ctx.orgId} AND o."assignedEmployeeId" = ANY(${scopedEmployeeIds})
+          `
+        : prisma.$queryRaw<{ total: string | null }[]>`
+            SELECT SUM(oli."quantity" * oli."unitPriceSnapshot") as total
+            FROM "OrderLineItem" oli
+            JOIN "Order" o ON o.id = oli."orderId"
+            WHERE o."orgId" = ${ctx.orgId}
+          `,
+      getOrgBaseCurrency(ctx.orgId),
+    ]),
+  );
 
   const totalRevenue = Number(revenueRows[0]?.total ?? 0);
 

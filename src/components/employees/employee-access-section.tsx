@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { EntityCombobox } from "@/components/forms/entity-combobox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +29,7 @@ import {
   switchToIndividualRole,
   type ActionResult,
 } from "@/actions/memberships";
+import { ROLE_LABELS } from "@/lib/role-labels";
 import type { Role } from "@/generated/prisma/enums";
 
 const initialState: ActionResult = {};
@@ -42,13 +45,6 @@ interface Membership {
   customRoleId: string | null;
   isIndividualRole: boolean;
 }
-
-const ROLE_LABELS: Record<Role, string> = {
-  ADMIN: "Администратор",
-  MANAGER: "Менеджер",
-  EMPLOYEE: "Сотрудник",
-  PRODUCTION: "Производство (только цех)",
-};
 
 /** Block I2.1 — mirrors МойСклад's "Индивидуальные настройки" vs named-role
  * toggle. "custom" mode covers both named-role selection and the
@@ -100,6 +96,8 @@ function GrantAccessForm({
 }) {
   const boundAction = grantEmployeeAccess.bind(null, orgSlug, employeeId);
   const [state, formAction, pending] = useActionState(boundAction, initialState);
+  const [role, setRole] = useState<Role>("EMPLOYEE");
+  const [customRoleId, setCustomRoleId] = useState<string | null>(null);
 
   return (
     <Card>
@@ -125,30 +123,32 @@ function GrantAccessForm({
               <Input id="access-password" name="password" type="password" />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="access-role">Базовая роль</Label>
-              <select id="access-role" name="role" defaultValue="EMPLOYEE" className="h-9 rounded-md border bg-background px-3 text-sm">
-                <option value="ADMIN">Администратор</option>
-                <option value="MANAGER">Менеджер</option>
-                <option value="EMPLOYEE">Сотрудник</option>
-                <option value="PRODUCTION">Производство (только цех)</option>
-              </select>
+              <Label>Базовая роль</Label>
+              <input type="hidden" name="role" value={role} />
+              <Select value={role} items={ROLE_LABELS} onValueChange={(v) => setRole(v as Role)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {ROLE_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             {customRoleOptions.length > 0 && (
               <div className="flex flex-col gap-2 sm:col-span-2">
-                <Label htmlFor="access-customRoleId">Пользовательская роль</Label>
-                <select
-                  id="access-customRoleId"
-                  name="customRoleId"
-                  defaultValue=""
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
-                >
-                  <option value="">Без ограничений (базовая роль)</option>
-                  {customRoleOptions.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <Label>Пользовательская роль</Label>
+                <input type="hidden" name="customRoleId" value={customRoleId ?? ""} />
+                <EntityCombobox
+                  options={customRoleOptions.map((r) => ({ value: r.id, label: r.name }))}
+                  value={customRoleId}
+                  onChange={setCustomRoleId}
+                  placeholder="Без ограничений (базовая роль)"
+                  emptyMessage="Роли не найдены"
+                />
                 <p className="text-xs text-muted-foreground">
                   Индивидуальные права можно настроить после выдачи доступа.
                 </p>
@@ -185,8 +185,8 @@ function ExistingAccess({
   const [role, setRole] = useState<Role>(membership.role);
   const initialMode: AccessMode = membership.isIndividualRole ? "individual" : membership.customRoleId ? "named" : "base";
   const [mode, setMode] = useState<AccessMode>(initialMode);
-  const [customRoleId, setCustomRoleId] = useState(
-    membership.isIndividualRole ? "" : (membership.customRoleId ?? ""),
+  const [customRoleId, setCustomRoleId] = useState<string | null>(
+    membership.isIndividualRole ? null : membership.customRoleId,
   );
 
   function handleModeChange(next: AccessMode) {
@@ -231,22 +231,23 @@ function ExistingAccess({
         </p>
         <div className="flex flex-col gap-2">
           <Label>Базовая роль</Label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-            className="h-9 w-fit rounded-md border bg-background px-3 text-sm"
-          >
-            {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
-              <option key={r} value={r}>
-                {ROLE_LABELS[r]}
-              </option>
-            ))}
-          </select>
+          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+            <SelectTrigger className="w-fit">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(ROLE_LABELS) as Role[]).map((r) => (
+                <SelectItem key={r} value={r}>
+                  {ROLE_LABELS[r]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="flex flex-col gap-2">
           <Label>Права</Label>
-          <div className="flex flex-wrap gap-1 rounded-md border p-1 text-sm">
+          <div className="flex flex-wrap gap-1 rounded-full border p-1 text-sm">
             {(
               [
                 { key: "base", label: "Базовая роль" },
@@ -260,7 +261,7 @@ function ExistingAccess({
                 disabled={isPending}
                 onClick={() => handleModeChange(opt.key)}
                 className={
-                  "rounded px-3 py-1 transition-colors " +
+                  "rounded-full px-3 py-1 transition-colors " +
                   (mode === opt.key ? "bg-primary text-primary-foreground" : "hover:bg-accent")
                 }
               >
@@ -271,18 +272,14 @@ function ExistingAccess({
 
           {mode === "named" && (
             <div className="flex flex-wrap items-center gap-2">
-              <select
+              <EntityCombobox
+                className="w-fit"
+                options={customRoleOptions.map((r) => ({ value: r.id, label: r.name }))}
                 value={customRoleId}
-                onChange={(e) => setCustomRoleId(e.target.value)}
-                className="h-9 w-fit rounded-md border bg-background px-3 text-sm"
-              >
-                <option value="">Выберите роль</option>
-                {customRoleOptions.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setCustomRoleId}
+                placeholder="Выберите роль"
+                emptyMessage="Роли не найдены"
+              />
               <Button
                 type="button"
                 variant="outline"
