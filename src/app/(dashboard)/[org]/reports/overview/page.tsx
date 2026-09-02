@@ -10,8 +10,9 @@ import { RankedBarList } from "@/components/dashboard/ranked-bar-list";
 import { AreaTrendChart } from "@/components/charts/area-trend-chart";
 import { StatusDonutChart } from "@/components/charts/status-donut-chart";
 import { StockActivityChart } from "@/components/charts/stock-activity-chart";
-import { DollarSign, Package, ShoppingCart, Truck, Wallet } from "lucide-react";
+import { Package, ShoppingCart, Truck, Wallet } from "lucide-react";
 import { formatCompactNumber, formatMoney, type ValueFormat } from "@/lib/format";
+import { getCurrencyIcon } from "@/lib/currency-icons";
 
 export default async function ReportsOverviewPage({
   params,
@@ -33,6 +34,7 @@ export default async function ReportsOverviewPage({
   const money = (amount: number) => formatMoney(amount, report.baseCurrency);
   const moneyFormat: ValueFormat = { kind: "money", currency: report.baseCurrency };
   const compactFormat: ValueFormat = { kind: "compact" };
+  const CurrencyIcon = getCurrencyIcon(report.baseCurrency);
 
   return (
     <div className="flex flex-col gap-4">
@@ -41,7 +43,7 @@ export default async function ReportsOverviewPage({
       <PeriodFilter from={from} to={to} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-        <KpiCard label="Выручка" value={money(kpis.revenue)} changePct={kpis.revenueChangePct} icon={DollarSign} />
+        <KpiCard label="Выручка" value={money(kpis.revenue)} changePct={kpis.revenueChangePct} icon={CurrencyIcon} />
         <KpiCard
           label="Заказы"
           value={formatCompactNumber(kpis.ordersCount)}
@@ -52,7 +54,7 @@ export default async function ReportsOverviewPage({
         <KpiCard
           label="Остаток денег"
           value={money(kpis.cashBalance)}
-          icon={DollarSign}
+          icon={CurrencyIcon}
           href={`/${org}/reports/money`}
         />
         <KpiCard

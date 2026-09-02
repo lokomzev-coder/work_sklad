@@ -597,17 +597,18 @@ label «Производство (только цех)»).
   с экспоненциальным backoff (см. M3) — очередь повторов больше не
   отсутствует, но по-прежнему нет in-process фоновой инфраструктуры:
   ретраи продвигаются только вызовом `/api/cron/webhook-retries` извне.
-- ⬜ **H5. Иконки валют на дашборде** (план, не начато, по явному запросу
-  2026-08-31) — KPI-карточки с деньгами (`(dashboard)/[org]/page.tsx`,
-  `reports/overview/page.tsx`) сейчас всегда используют иконку `DollarSign`
-  из lucide-react, независимо от `Organization.baseCurrency`. План: новый
-  `lib/currency-icons.ts` — маппинг код валюты → lucide-иконка
-  (`RussianRuble`/`DollarSign`/`Euro`/`PoundSterling`/`JapaneseYen`/
-  `SwissFranc`, все уже есть в установленной версии lucide-react; фолбэк
-  `Coins` для нераспознанного кода, т.к. `currency` — свободная строка, не
-  ISO 4217-валидируемая, см. `lib/format.ts`). Заменить `icon={DollarSign}`
-  на `icon={getCurrencyIcon(baseCurrency)}` в этих 2 местах. Сложность:
-  тривиальная (1 новый файл + 2 правки), готово к реализации в любой момент.
+- ✅ **H5. Иконки валют на дашборде** — новый `lib/currency-icons.ts`:
+  `getCurrencyIcon(currency)` маппит код валюты (без учёта регистра) на
+  lucide-иконку (`RussianRuble`/`DollarSign`/`Euro`/`PoundSterling`/
+  `JapaneseYen`/`SwissFranc`), фолбэк `Coins` для нераспознанного кода
+  (т.к. `currency` — свободная строка, не ISO 4217-валидируемая, см.
+  `lib/format.ts`). `(dashboard)/[org]/page.tsx` и
+  `reports/overview/page.tsx` заменили жёстко закодированный
+  `icon={DollarSign}` на `icon={getCurrencyIcon(baseCurrency)}` /
+  `icon={getCurrencyIcon(report.baseCurrency)}` — 3 KPI-карточки с
+  деньгами. Живая проверка (`@playwright/cli`, `f3-role-test`,
+  `baseCurrency: RUB`): дашборд «Выручка (все заказы)» и обзор-отчёт
+  «Выручка»/«Остаток денег» теперь показывают ₽ вместо $ (скриншоты).
 
 ---
 
@@ -1845,7 +1846,7 @@ tsx` — чекбоксы по ролям, кастомным ролям и со
 | 🔶 | M4 — печать: диалог+этикетки ✅ / серверный PDF ⬜ | средняя |
 | ✅ | M5 — платежи, полноценные Invoice-документы | высокая |
 | ⬜ | M6 — остатки по модификациям товара | высокая |
-| ⬜ | H5 — иконки валют на дашборде | тривиальная |
+| ✅ | H5 — иконки валют на дашборде | тривиальная |
 
 Пункты списка 2 — не баги, а точечные доработки (см. Блок M за деталями
 плана каждого). Ничего из списков 1/2 не начинать без явного запроса —

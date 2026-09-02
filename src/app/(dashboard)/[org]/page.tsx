@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Users, Contact, Package, ShoppingCart, DollarSign } from "lucide-react";
+import { Users, Contact, Package, ShoppingCart } from "lucide-react";
 import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { buildScopeWhere, resolveGroupMemberIds } from "@/lib/scope";
 import { getOrgBaseCurrency } from "@/lib/currency";
+import { getCurrencyIcon } from "@/lib/currency-icons";
 import { formatMoney } from "@/lib/format";
 import { statusBadgeClass } from "@/lib/status-color";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -150,7 +151,7 @@ export default async function OrgDashboardPage({
         {stats.map((stat) => (
           <KpiCard key={stat.href} label={stat.label} value={String(stat.value)} icon={stat.icon} href={stat.href} />
         ))}
-        <KpiCard label="Выручка (все заказы)" value={formatMoney(totalRevenue, baseCurrency)} icon={DollarSign} />
+        <KpiCard label="Выручка (все заказы)" value={formatMoney(totalRevenue, baseCurrency)} icon={getCurrencyIcon(baseCurrency)} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

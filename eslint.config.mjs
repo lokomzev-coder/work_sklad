@@ -20,6 +20,10 @@ const eslintConfig = defineConfig([
     ".windsurf/**",
     ".playwright-mcp/**",
     ".playwright-cli/**",
+    // Stray Python venvs that don't belong in this Node.js project (e.g. a
+    // `strix-agent` install run from the repo root) — see .gitignore.
+    ".venv/**",
+    ".venv-*/**",
   ]),
 ]);
 

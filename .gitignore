@@ -57,3 +57,11 @@ next-env.d.ts
 
 # playwright CLI browser tool artifacts (screenshots, console/network logs)
 /.playwright-cli/
+
+# Stray Python venvs (e.g. from a `strix-agent` install run inside the repo
+# root instead of the user's global site-packages) — never belong in this
+# Node.js project; excluded so git/eslint stop walking their vendored JS/pyd
+# payloads.
+/.venv/
+/.venv-*/
+
