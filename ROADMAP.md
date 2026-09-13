@@ -667,14 +667,14 @@ label «Производство (только цех)»).
 
 **Дополнено 2026-09-01 — план переноса на поддомен**: пользователь
 планирует со временем вынести `/floor` на отдельный поддомен (например
-`floor.easywork.ru`), как в МойСклад отдельный продукт «МойСклад
+`floor.worksklad.ru`), как в МойСклад отдельный продукт «МойСклад
 Производство» — не просто скрытый раздел, а физически отдельный «сайт».
 Уже сегодняшняя архитектура это не блокирует (роль/права полностью отделены
 от роутинга, как отмечено выше) — сам перенос сведётся к: (1) `middleware.ts`
 (если появится) или Next.js `rewrites`/отдельный деплой резолвит поддомен
 `floor.*` на ту же `(floor)` route-group вместо пути `/floor`; (2) логин/сессия
 должны работать между поддоменами — next-auth cookie нужно будет расширить
-на родительский домен (`domain: ".easywork.ru"` в конфиге сессии) вместо
+на родительский домен (`domain: ".worksklad.ru"` в конфиге сессии) вместо
 дефолтного per-host; (3) редиректы `role === "PRODUCTION" → /floor` в
 обычном layout меняются на редирект на URL поддомена, а не относительный
 путь. Ничего из этого не реализовано — записано как известное следующее
@@ -841,7 +841,7 @@ connect via HTTP + Prisma ORM» выше него.
   получил `saveCustomFieldValuesRecord` — тот же upsert-код, что и у
   FormData-варианта, но принимает `Record<string, string>`).
 - ✅ **H4. Вебхуки** — `Webhook`/`WebhookDelivery`, HMAC-SHA256 подпись
-  (`X-EasyWork-Signature`), события `ORDER_CREATED`/`ORDER_STATUS_CHANGED`/
+  (`X-WorkSklad-Signature`), события `ORDER_CREATED`/`ORDER_STATUS_CHANGED`/
   `PURCHASE_ORDER_CREATED`/`PURCHASE_ORDER_STATUS_CHANGED`/`PAYMENT_CREATED`.
   `lib/webhooks.ts::dispatchWebhookEvent` — fire-and-forget (не await'ится
   вызывающим действием, чтобы медленный/недоступный эндпоинт не подвешивал

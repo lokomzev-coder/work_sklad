@@ -28,7 +28,7 @@ export default async function WebhooksPage({
         <h1 className="text-2xl font-semibold">Вебхуки</h1>
         <p className="text-sm text-muted-foreground">
           Получайте уведомления о событиях в системе на свой URL. Тело запроса подписано
-          HMAC-SHA256 (заголовок X-EasyWork-Signature) секретом вебхука. Неудачная доставка
+          HMAC-SHA256 (заголовок X-WorkSklad-Signature) секретом вебхука. Неудачная доставка
           повторяется автоматически (до {MAX_ATTEMPTS} попыток с нарастающей паузой) — статус
           повтора виден в истории ниже.
         </p>

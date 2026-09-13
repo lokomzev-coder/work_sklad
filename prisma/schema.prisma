@@ -1937,7 +1937,7 @@ model ExchangeRate {
 // --- Block H4: webhooks ---------------------------------------------------
 // Best-effort outbound notifications for external integrations (1С, sites,
 // marketplaces) — fire-and-forget HTTP POST with an HMAC-SHA256 signature
-// over the raw body (header X-EasyWork-Signature). Block M3: a failed
+// over the raw body (header X-WorkSklad-Signature). Block M3: a failed
 // delivery is retried with exponential backoff (lib/webhooks.ts::
 // retryPendingDeliveries), driven by an external scheduler hitting
 // /api/cron/webhook-retries — this project still has no in-process

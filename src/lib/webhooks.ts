@@ -68,7 +68,7 @@ async function attemptHttpDelivery(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-EasyWork-Signature": signature,
+        "X-WorkSklad-Signature": signature,
       },
       body: bodyStr,
       signal: controller.signal,

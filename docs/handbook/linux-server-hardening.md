@@ -58,29 +58,29 @@ sudo ufw enable
 Не запускайте Node.js-процесс от root:
 
 ```bash
-sudo adduser --system --group --home /opt/easy-work app
-sudo chown -R app:app /opt/easy-work
+sudo adduser --system --group --home /opt/worksklad app
+sudo chown -R app:app /opt/worksklad
 ```
 
-Деплойте код в `/opt/easy-work` (или другой путь) от имени этого
+Деплойте код в `/opt/worksklad` (или другой путь) от имени этого
 пользователя, процесс-менеджер (см. п.5) тоже запускает его от `app`, а
 не от `root`.
 
 ## 5. Процесс-менеджер: systemd
 
-Пример unit-файла `/etc/systemd/system/easy-work.service`:
+Пример unit-файла `/etc/systemd/system/worksklad.service`:
 
 ```ini
 [Unit]
-Description=Easy Work Next.js app
+Description=WorkSklad Next.js app
 After=network.target postgresql.service
 
 [Service]
 Type=simple
 User=app
 Group=app
-WorkingDirectory=/opt/easy-work
-EnvironmentFile=/opt/easy-work/.env
+WorkingDirectory=/opt/worksklad
+EnvironmentFile=/opt/worksklad/.env
 ExecStart=/usr/bin/npm run start
 Restart=on-failure
 RestartSec=5
@@ -95,7 +95,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now easy-work
+sudo systemctl enable --now worksklad
 ```
 
 `EnvironmentFile` подхватывает `.env` — убедитесь, что права на файл
@@ -115,8 +115,8 @@ sudo systemctl enable --now easy-work
 ## 7. Права на `.env` и секреты
 
 ```bash
-chmod 600 /opt/easy-work/.env
-chown app:app /opt/easy-work/.env
+chmod 600 /opt/worksklad/.env
+chown app:app /opt/worksklad/.env
 ```
 
 `.env` не должен быть в git — проверьте `.gitignore` перед первым
@@ -154,7 +154,7 @@ sudo certbot --nginx -d ваш-домен.ру -d kassa.ваш-домен.ру
 хост/объектное хранилище):
 
 ```bash
-pg_dump "$DATABASE_URL" | gzip > /backups/easy-work-$(date +%F).sql.gz
+pg_dump "$DATABASE_URL" | gzip > /backups/worksklad-$(date +%F).sql.gz
 ```
 
 Настройте через cron, ротацию старых бэкапов (например, хранить 30

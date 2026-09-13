@@ -115,7 +115,7 @@ async function main() {
   }
 
   const secret = new Secret({ size: 20 });
-  const totp = new TOTP({ issuer: "EasyWork Admin", label: email, secret });
+  const totp = new TOTP({ issuer: "WorkSklad Admin", label: email, secret });
   console.log("\nОтсканируйте этот QR-код в приложении-аутентификаторе (Google Authenticator и т.п.):\n");
   console.log(await QRCode.toString(totp.toString(), { type: "terminal", small: true }));
   console.log(`Если не можете отсканировать — введите вручную: ${secret.base32}\n`);

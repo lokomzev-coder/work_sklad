@@ -172,7 +172,7 @@ export async function startPlatformAdminSetup(token: string, password: string): 
 
   const passwordHash = await bcrypt.hash(password, 12);
   const secret = new Secret({ size: 20 });
-  const totp = new TOTP({ issuer: "EasyWork Admin", label: admin.email, secret });
+  const totp = new TOTP({ issuer: "WorkSklad Admin", label: admin.email, secret });
   const { wrapped, nonce } = encryptWithMasterKey(secret.base32);
 
   await prisma.platformAdmin.update({

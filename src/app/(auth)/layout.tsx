@@ -19,7 +19,7 @@ export default function AuthLayout({
             ES
           </div>
           <span className="text-lg font-semibold tracking-tight">
-            EasyWork
+            WorkSklad
           </span>
         </div>
         <div className="w-full">{children}</div>

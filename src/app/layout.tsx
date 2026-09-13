@@ -23,7 +23,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "EasyWork",
+  metadataBase: new URL("https://worksklad.ru"),
+  title: "WorkSklad",
   description: "Сотрудники, клиенты, заказы и пароли — в одном месте",
 };
 
