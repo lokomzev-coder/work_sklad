@@ -6,6 +6,7 @@ import { signIn, signOut } from "@/lib/auth";
 import { registerSchema, loginSchema } from "@/lib/validation/auth";
 import { slugify } from "@/lib/slug";
 import { generateDek, wrapDek } from "@/lib/crypto";
+import { TRIAL_DAYS } from "@/lib/subscription";
 
 export interface ActionResult {
   error?: string;
@@ -57,7 +58,14 @@ export async function registerAction(
       data: { name, email, passwordHash },
     });
     const org = await tx.organization.create({
-      data: { name: orgName, slug, encDekWrapped: wrapped, encDekNonce: nonce },
+      data: {
+        name: orgName,
+        slug,
+        encDekWrapped: wrapped,
+        encDekNonce: nonce,
+        // Блок Q — 14-day free trial, full access, starting at registration.
+        trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
+      },
     });
     await tx.membership.create({
       data: { userId: user.id, orgId: org.id, role: "ADMIN", login },

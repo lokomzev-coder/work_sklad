@@ -17,6 +17,10 @@
 /.next/
 /out/
 
+# Block O phase 8: locally-stored uploaded files (product images, document
+# attachments) — never committed, same as any other user-generated content.
+/storage/
+
 # production
 /build
 

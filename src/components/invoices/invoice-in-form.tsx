@@ -14,16 +14,23 @@ import { upsertInvoiceIn } from "@/actions/invoices-in";
 import type { CustomFieldDef } from "@/lib/custom-fields";
 import { formatMoney } from "@/lib/format";
 
+interface VariantOption {
+  id: string;
+  label: string;
+}
+
 interface CatalogOption {
   id: string;
   name: string;
   unitPrice: string;
   currency: string;
+  variants: VariantOption[];
 }
 
 interface LineItemRow {
   key: string;
   catalogItemId: string | null;
+  variantId: string | null;
   quantity: string;
   unitCost: string;
 }
@@ -43,13 +50,13 @@ interface InvoiceInFormProps {
     supplierId: string | null;
     contractId: string | null;
     legalEntityId: string | null;
-    lineItems: { catalogItemId: string; quantity: string; unitCost: string }[];
+    lineItems: { catalogItemId: string; variantId: string | null; quantity: string; unitCost: string }[];
     customFieldValues?: Record<string, string>;
   };
 }
 
 function newRow(defaultCost = ""): LineItemRow {
-  return { key: crypto.randomUUID(), catalogItemId: null, quantity: "1", unitCost: defaultCost };
+  return { key: crypto.randomUUID(), catalogItemId: null, variantId: null, quantity: "1", unitCost: defaultCost };
 }
 
 export function InvoiceInForm({
@@ -77,6 +84,7 @@ export function InvoiceInForm({
       ? defaultValues.lineItems.map((li) => ({
           key: crypto.randomUUID(),
           catalogItemId: li.catalogItemId,
+          variantId: li.variantId,
           quantity: li.quantity,
           unitCost: li.unitCost,
         }))
@@ -110,6 +118,7 @@ export function InvoiceInForm({
       .filter((r) => r.catalogItemId)
       .map((r) => ({
         catalogItemId: r.catalogItemId!,
+        variantId: r.variantId,
         quantity: Number(r.quantity),
         unitCost: Number(r.unitCost),
       }));
@@ -201,54 +210,70 @@ export function InvoiceInForm({
           {rows.map((row) => {
             const item = row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined;
             const subtotal = (Number(row.unitCost) || 0) * (Number(row.quantity) || 0);
+            const variantOptions: ComboboxOption[] =
+              item?.variants.map((v) => ({ value: v.id, label: v.label })) ?? [];
 
             return (
-              <div key={row.key} className="flex flex-wrap items-end gap-2">
-                <div className="min-w-[200px] basis-full sm:basis-auto sm:flex-1">
-                  <EntityCombobox
-                    options={catalogItemComboOptions}
-                    value={row.catalogItemId}
-                    onChange={(v) =>
-                      updateRow(row.key, {
-                        catalogItemId: v,
-                        unitCost: row.unitCost || (v ? (catalogById.get(v)?.unitPrice ?? "") : ""),
-                      })
-                    }
-                    placeholder="Выберите товар/услугу"
-                    emptyMessage="Ничего не найдено"
-                  />
+              <div key={row.key} className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0">
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[200px] basis-full sm:basis-auto sm:flex-1">
+                    <EntityCombobox
+                      options={catalogItemComboOptions}
+                      value={row.catalogItemId}
+                      onChange={(v) =>
+                        updateRow(row.key, {
+                          catalogItemId: v,
+                          variantId: null,
+                          unitCost: row.unitCost || (v ? (catalogById.get(v)?.unitPrice ?? "") : ""),
+                        })
+                      }
+                      placeholder="Выберите товар/услугу"
+                      emptyMessage="Ничего не найдено"
+                    />
+                  </div>
+                  <div className="w-24">
+                    <Input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      value={row.quantity}
+                      onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Цена"
+                      value={row.unitCost}
+                      onChange={(e) => updateRow(row.key, { unitCost: e.target.value })}
+                    />
+                  </div>
+                  <div className="w-28 shrink-0 text-right text-sm text-muted-foreground">
+                    {item ? formatMoney(subtotal, item.currency) : "—"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={rows.length === 1}
+                    onClick={() => removeRow(row.key)}
+                  >
+                    Убрать
+                  </Button>
                 </div>
-                <div className="w-24">
-                  <Input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    value={row.quantity}
-                    onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
-                  />
-                </div>
-                <div className="w-28">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="Цена"
-                    value={row.unitCost}
-                    onChange={(e) => updateRow(row.key, { unitCost: e.target.value })}
-                  />
-                </div>
-                <div className="w-28 shrink-0 text-right text-sm text-muted-foreground">
-                  {item ? formatMoney(subtotal, item.currency) : "—"}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={rows.length === 1}
-                  onClick={() => removeRow(row.key)}
-                >
-                  Убрать
-                </Button>
+                {variantOptions.length > 0 && (
+                  <div className="w-full sm:w-64">
+                    <EntityCombobox
+                      options={variantOptions}
+                      value={row.variantId}
+                      onChange={(v) => updateRow(row.key, { variantId: v })}
+                      placeholder="Выберите модификацию"
+                      emptyMessage="Модификации не найдены"
+                    />
+                  </div>
+                )}
               </div>
             );
           })}

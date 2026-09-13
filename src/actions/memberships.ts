@@ -17,7 +17,7 @@ const grantSchema = z.object({
   login: z.string().trim().toLowerCase().regex(LOGIN_REGEX, "Логин: латиница/цифры, без пробелов и @"),
   email: z.email("Некорректный email"),
   password: z.string().trim().min(8, "Минимум 8 символов").max(200).optional(),
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION", "CASHIER"]),
   customRoleId: z.string().optional(),
 });
 
@@ -114,7 +114,7 @@ export async function revokeEmployeeAccess(orgSlug: string, employeeId: string) 
 }
 
 const updateSchema = z.object({
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION", "CASHIER"]),
   customRoleId: z.string().optional(),
 });
 

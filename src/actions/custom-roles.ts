@@ -12,6 +12,7 @@ import {
   type ScopeLevel,
   type CustomRolePermissionsV2,
 } from "@/lib/permissions";
+import { assertFeatureEnabled, KNOWN_FEATURE_KEYS } from "@/lib/subscription";
 import type { Prisma } from "@/generated/prisma/client";
 
 export interface ActionResult {
@@ -71,6 +72,11 @@ export async function createCustomRole(
 ): Promise<ActionResult & { roleId?: string }> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "customRoles", "create");
+  // Block S — gates only the CREATION of a new custom role, not the use of
+  // ones already created (same "never retroactively revoke" principle as
+  // the RESTRICTED subscription gate) — an org whose plan drops this
+  // feature keeps whatever custom roles it already built.
+  assertFeatureEnabled(ctx, KNOWN_FEATURE_KEYS.customRoles);
 
   const parsed = createSchema.safeParse({ name: formData.get("name") });
   if (!parsed.success) {

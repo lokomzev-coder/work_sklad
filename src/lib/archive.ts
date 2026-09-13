@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { deleteStoredFile } from "@/lib/file-storage";
 
 export type ArchivableEntityType =
   | "employee"
@@ -6,7 +7,8 @@ export type ArchivableEntityType =
   | "catalogItem"
   | "vaultServiceEntry"
   | "store"
-  | "legalEntity";
+  | "legalEntity"
+  | "project";
 
 const ENTITY_LABEL: Record<ArchivableEntityType, string> = {
   employee: "Сотрудник",
@@ -15,6 +17,7 @@ const ENTITY_LABEL: Record<ArchivableEntityType, string> = {
   vaultServiceEntry: "Запись сервиса",
   store: "Склад",
   legalEntity: "Юрлицо",
+  project: "Проект",
 };
 
 interface ReferenceCheck {
@@ -126,6 +129,12 @@ async function checkReferences(
       }
       return { referenced: false };
     }
+    case "project": {
+      const count = await prisma.order.count({ where: { projectId: id } });
+      return count > 0
+        ? { referenced: true, reason: `указан в ${count} заказ(ах)` }
+        : { referenced: false };
+    }
   }
 }
 
@@ -164,12 +173,24 @@ export async function archiveOrDelete(
         });
         await prisma.client.delete({ where: { id, orgId } });
         break;
-      case "catalogItem":
+      case "catalogItem": {
         await prisma.customFieldValue.deleteMany({
           where: { entityId: id, definition: { entityType: "CATALOG_ITEM" } },
         });
+        // Same orphan problem as CustomFieldValue above — Attachment.entityId
+        // is polymorphic (Block O phase 8), no FK to clean up automatically.
+        // Delete the DB rows first, then best-effort remove the files
+        // themselves (readStoredFile/deleteStoredFile already tolerate a
+        // missing file — see file-storage.ts).
+        const images = await prisma.attachment.findMany({
+          where: { entityId: id, entityType: "CatalogItem" },
+          select: { id: true, storagePath: true },
+        });
+        await prisma.attachment.deleteMany({ where: { entityId: id, entityType: "CatalogItem" } });
+        await Promise.all(images.map((img) => deleteStoredFile(img.storagePath)));
         await prisma.catalogItem.delete({ where: { id, orgId } });
         break;
+      }
       case "vaultServiceEntry":
         await prisma.vaultServiceEntry.delete({ where: { id, orgId } });
         break;
@@ -178,6 +199,9 @@ export async function archiveOrDelete(
         break;
       case "legalEntity":
         await prisma.legalEntity.delete({ where: { id, orgId } });
+        break;
+      case "project":
+        await prisma.project.delete({ where: { id, orgId } });
         break;
     }
     return { deleted: true };
@@ -216,6 +240,12 @@ export async function archiveOrDelete(
       break;
     case "legalEntity":
       await prisma.legalEntity.update({
+        where: { id, orgId },
+        data: { status: "ARCHIVED", archivedAt: new Date() },
+      });
+      break;
+    case "project":
+      await prisma.project.update({
         where: { id, orgId },
         data: { status: "ARCHIVED", archivedAt: new Date() },
       });

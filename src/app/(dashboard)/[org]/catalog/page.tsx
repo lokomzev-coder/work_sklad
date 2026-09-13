@@ -4,14 +4,13 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  ArchivableEntityTable,
   StatusTabs,
   type EntityStatusFilter,
 } from "@/components/data-table/archivable-entity-table";
-import { ArchiveRowActions } from "@/components/data-table/archive-row-actions";
 import { CatalogSubnav } from "@/components/catalog/catalog-subnav";
+import { ImportWizard } from "@/components/catalog/import-wizard";
+import { CatalogPrintSection } from "@/components/catalog/catalog-print-section";
 import { QuerySelectFilter } from "@/components/forms/query-select-filter";
 import { flattenGroupTree } from "@/lib/catalog-groups";
 import {
@@ -19,13 +18,6 @@ import {
   restoreCatalogItem,
   deleteCatalogItem,
 } from "@/actions/catalog";
-import { formatMoney } from "@/lib/format";
-
-const TYPE_LABEL: Record<string, string> = {
-  PRODUCT: "Товар",
-  SERVICE: "Услуга",
-  BUNDLE: "Комплект",
-};
 
 export default async function CatalogPage({
   params,
@@ -42,7 +34,7 @@ export default async function CatalogPage({
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
 
-  const [items, groups] = await Promise.all([
+  const [items, groups, labelTemplates] = await Promise.all([
     prisma.catalogItem.findMany({
       where: {
         orgId: ctx.orgId,
@@ -53,20 +45,25 @@ export default async function CatalogPage({
       include: { group: true },
     }),
     prisma.catalogGroup.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
+    prisma.labelTemplate.findMany({ where: { orgId: ctx.orgId }, orderBy: { name: "asc" } }),
   ]);
 
   const canEdit = can(ctx, "catalog", "edit");
+  const canImport = can(ctx, "catalogImport", "create");
 
   return (
     <div className="flex flex-col gap-4">
       <CatalogSubnav org={org} active="catalog" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Товары и услуги</h1>
-        {canEdit && (
-          <Button render={<Link href={`/${org}/catalog/new`} />}>
-            Добавить
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canImport && <ImportWizard orgSlug={org} />}
+          {canEdit && (
+            <Button render={<Link href={`/${org}/catalog/new`} />}>
+              Добавить
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-4">
@@ -85,40 +82,25 @@ export default async function CatalogPage({
         )}
       </div>
 
-      <ArchivableEntityTable
-        data={items}
-        emptyMessage={
-          activeTab === "ACTIVE" ? "Каталог пуст" : "В архиве пусто"
-        }
-        rowHref={canEdit ? (row) => `/${org}/catalog/${row.id}` : undefined}
-        columns={[
-          { header: "Название", cell: (row) => row.name },
-          {
-            header: "Тип",
-            cell: (row) => (
-              <Badge variant="secondary">{TYPE_LABEL[row.type]}</Badge>
-            ),
-          },
-          { header: "Артикул", cell: (row) => row.sku ?? "—" },
-          { header: "Группа", cell: (row) => row.group?.name ?? "—" },
-          {
-            header: "Цена",
-            cell: (row) => formatMoney(Number(row.unitPrice), row.currency),
-          },
-        ]}
-        rowActions={
-          canEdit
-            ? (row) => (
-                <ArchiveRowActions
-                  status={row.status}
-                  onArchive={archiveCatalogItem.bind(null, org, row.id)}
-                  onRestore={restoreCatalogItem.bind(null, org, row.id)}
-                  onDelete={deleteCatalogItem.bind(null, org, row.id)}
-                  deleteTitle="Удалить позицию каталога?"
-                />
-              )
-            : undefined
-        }
+      <CatalogPrintSection
+        orgSlug={org}
+        activeTab={activeTab}
+        canEdit={canEdit}
+        templates={labelTemplates.map((t) => ({ id: t.id, name: t.name }))}
+        openPdfInBrowser={ctx.openPdfInBrowser}
+        rows={items.map((item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          sku: item.sku,
+          groupName: item.group?.name ?? null,
+          unitPrice: Number(item.unitPrice),
+          currency: item.currency,
+          status: item.status as EntityStatusFilter,
+        }))}
+        onArchive={archiveCatalogItem.bind(null, org)}
+        onRestore={restoreCatalogItem.bind(null, org)}
+        onDelete={deleteCatalogItem.bind(null, org)}
       />
     </div>
   );

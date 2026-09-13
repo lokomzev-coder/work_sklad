@@ -4,7 +4,10 @@ import type { CustomFieldEntityType } from "@/generated/prisma/enums";
 export interface CustomFieldDef {
   id: string;
   name: string;
-  type: "TEXT" | "NUMBER" | "DATE" | "BOOLEAN" | "SELECT";
+  type: "TEXT" | "NUMBER" | "DATE" | "BOOLEAN" | "SELECT" | "CUSTOM_ENTITY";
+  // For SELECT: the definition's own stored list. For CUSTOM_ENTITY: the
+  // linked CustomEntityType's current values, resolved live here so a
+  // rename/addition shows up everywhere without touching this definition.
   options: string[];
 }
 
@@ -12,10 +15,17 @@ export async function listCustomFieldDefinitions(
   orgId: string,
   entityType: CustomFieldEntityType,
 ): Promise<CustomFieldDef[]> {
-  return prisma.customFieldDefinition.findMany({
+  const defs = await prisma.customFieldDefinition.findMany({
     where: { orgId, entityType },
     orderBy: { position: "asc" },
+    include: { customEntityType: { include: { values: { orderBy: { position: "asc" } } } } },
   });
+  return defs.map((def) => ({
+    id: def.id,
+    name: def.name,
+    type: def.type,
+    options: def.type === "CUSTOM_ENTITY" ? (def.customEntityType?.values.map((v) => v.name) ?? []) : def.options,
+  }));
 }
 
 /** Values keyed by definitionId for one entity row, defs and values fetched separately

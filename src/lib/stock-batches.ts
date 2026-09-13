@@ -1,4 +1,4 @@
-import type { Prisma } from "@/generated/prisma/client";
+import type { Tx } from "@/lib/prisma";
 
 /**
  * Block M1 — FIFO cost-batch tracking. Pure, transaction-scoped helpers
@@ -7,15 +7,22 @@ import type { Prisma } from "@/generated/prisma/client";
  * prisma/schema.prisma's StockBatch/StockBatchAllocation doc comments and
  * ROADMAP.md Block M/M1 for the design and its deliberate scope
  * boundaries (SUPPLY-only, not store-scoped, no retroactive backfill).
+ *
+ * Block M6: batches are scoped per (orgId, catalogItemId, variantId) — a
+ * null-variant batch pool (items with no variants, or lines from a
+ * variant-blind flow like production) is entirely separate from any
+ * variant-specific pool. Prisma's `variantId: params.variantId` where-clause
+ * translates `null` to `IS NULL`, so a null-variant lookup never matches a
+ * variant-specific batch and vice versa — no manual NULL-safety needed here,
+ * unlike the raw SQL in lib/stock.ts.
  */
-
-type Tx = Prisma.TransactionClient;
 
 export async function createBatchForSupplyLine(
   tx: Tx,
   params: {
     orgId: string;
     catalogItemId: string;
+    variantId: string | null;
     sourceMovementLineId: string;
     unitCost: number;
     currency: string | null;
@@ -23,18 +30,24 @@ export async function createBatchForSupplyLine(
     // batch's whole lifetime, same as unitCost/currency.
     rateSnapshot: number | null;
     quantity: number;
+    // Block O phase 8 — consignment (партия со сроком годности), both optional.
+    label?: string;
+    expiryDate?: Date;
   },
 ): Promise<void> {
   await tx.stockBatch.create({
     data: {
       orgId: params.orgId,
       catalogItemId: params.catalogItemId,
+      variantId: params.variantId,
       sourceMovementLineId: params.sourceMovementLineId,
       unitCost: params.unitCost,
       currency: params.currency,
       rateSnapshot: params.rateSnapshot,
       initialQuantity: params.quantity,
       remainingQuantity: params.quantity,
+      label: params.label ?? null,
+      expiryDate: params.expiryDate ?? null,
     },
   });
 }
@@ -62,6 +75,7 @@ export async function allocateFifo(
   params: {
     orgId: string;
     catalogItemId: string;
+    variantId: string | null;
     demandLineId: string;
     quantity: number;
   },
@@ -70,7 +84,12 @@ export async function allocateFifo(
   let allocated = 0;
 
   const batches = await tx.stockBatch.findMany({
-    where: { orgId: params.orgId, catalogItemId: params.catalogItemId, remainingQuantity: { gt: 0 } },
+    where: {
+      orgId: params.orgId,
+      catalogItemId: params.catalogItemId,
+      variantId: params.variantId,
+      remainingQuantity: { gt: 0 },
+    },
     orderBy: { createdAt: "asc" },
   });
 
@@ -87,6 +106,9 @@ export async function allocateFifo(
     await tx.stockBatchAllocation.create({
       data: {
         batchId: batch.id,
+        // Denormalized from batch.variantId at allocation time, same
+        // defensive-snapshot reasoning as unitCost/currency/rateSnapshot.
+        variantId: batch.variantId,
         demandLineId: params.demandLineId,
         quantity: take,
         unitCost: batch.unitCost,

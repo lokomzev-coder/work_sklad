@@ -5,19 +5,9 @@ import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { buildScopeWhere } from "@/lib/scope";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from "@/components/ui/table";
 import { OrdersSubnav } from "@/components/orders/orders-subnav";
+import { OrdersSelectableTable } from "@/components/orders/orders-selectable-table";
 import { QuerySelectFilter } from "@/components/forms/query-select-filter";
-import { statusBadgeClass } from "@/lib/status-color";
-import { formatMoney } from "@/lib/format";
 
 export default async function OrdersPage({
   params,
@@ -69,51 +59,26 @@ export default async function OrdersPage({
         />
       )}
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>№</TableHead>
-              <TableHead>Клиент</TableHead>
-              <TableHead>Статус</TableHead>
-              <TableHead className="text-right">Сумма</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {orders.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground">
-                  Заказов пока нет
-                </TableCell>
-              </TableRow>
-            ) : (
-              orders.map((order) => {
-                const total = order.lineItems.reduce(
-                  (sum, li) => sum + Number(li.unitPriceSnapshot) * Number(li.quantity),
-                  0,
-                );
-                const currency = order.lineItems[0]?.currency ?? "RUB";
-                return (
-                  <TableRow key={order.id}>
-                    <TableCell>
-                      <Link href={`/${org}/orders/${order.id}`} className="font-medium hover:underline">
-                        №{order.number}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{order.client?.name ?? "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={statusBadgeClass(order.status.color)}>
-                        {order.status.name}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">{formatMoney(total, currency)}</TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <OrdersSelectableTable
+        orgSlug={org}
+        canCreateWave={can(ctx, "warehouse", "create")}
+        orders={orders.map((order) => {
+          const total = order.lineItems.reduce(
+            (sum, li) => sum + Number(li.unitPriceSnapshot) * Number(li.quantity),
+            0,
+          );
+          const currency = order.lineItems[0]?.currency ?? "RUB";
+          return {
+            id: order.id,
+            number: order.number,
+            clientName: order.client?.name ?? "—",
+            statusName: order.status.name,
+            statusColor: order.status.color,
+            total,
+            currency,
+          };
+        })}
+      />
     </div>
   );
 }

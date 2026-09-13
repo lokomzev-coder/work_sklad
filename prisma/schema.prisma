@@ -20,6 +20,11 @@ enum Role {
   // only the /floor production interface (see lib/permissions.ts
   // CAPABILITIES.PRODUCTION and the (floor) route group's layout gates).
   PRODUCTION
+  // Block E: kassa-only role — same idea as PRODUCTION, locked to /kassa.
+  // ADMIN is the one exception that can reach BOTH the regular dashboard
+  // and /kassa (see the (kassa) route group's layout gate) — CASHIER has
+  // no such exception, it's locked to /kassa only.
+  CASHIER
 }
 
 model User {
@@ -32,6 +37,8 @@ model User {
   memberships     Membership[]
   vaultGrantsMade EmployeeVaultAccess[]
   vaultAccessLogs VaultAccessLog[]
+  importJobs      ImportJob[]
+  notifications   Notification[]
 }
 
 model Organization {
@@ -48,37 +55,108 @@ model Organization {
   // any other currency are converted via the latest applicable ExchangeRate.
   baseCurrency String @default("RUB")
 
-  memberships            Membership[]
-  employees              Employee[]
-  groups                 Group[]
-  clients                Client[]
-  catalogItems           CatalogItem[]
-  catalogGroups          CatalogGroup[]
-  units                  Unit[]
-  characteristics        Characteristic[]
-  orders                 Order[]
-  purchaseOrders         PurchaseOrder[]
-  invoicesOut            InvoiceOut[]
-  invoicesIn             InvoiceIn[]
-  payments               Payment[]
-  vaultEntries           VaultServiceEntry[]
-  tags                   Tag[]
-  stores                 Store[]
-  stockMovements         StockMovement[]
-  stockBatches           StockBatch[]
-  salesChannels          SalesChannel[]
-  contracts              Contract[]
-  legalEntities          LegalEntity[]
-  documentStatuses       DocumentStatus[]
-  customFieldDefinitions CustomFieldDefinition[]
-  exchangeRates          ExchangeRate[]
-  webhooks               Webhook[]
-  customRoles            CustomRole[]
-  techCards              TechCard[]
-  productionOrders       ProductionOrder[]
-  processingStages       ProcessingStage[]
-  techProcesses          TechProcess[]
-  productionStages       ProductionStage[]
+  // Блок L фаза 3 — current active tariff, granted/changed/revoked only
+  // from the platform panel (never self-service — see actions/
+  // platform-subscriptions.ts). Null plan = no subscription at all (a
+  // brand-new org before anyone assigns one); null expiresAt with a plan
+  // set = active with no fixed term.
+  subscriptionPlanId     String?
+  subscriptionPlan       SubscriptionPlan?       @relation(fields: [subscriptionPlanId], references: [id], onDelete: SetNull)
+  subscriptionExpiresAt  DateTime?
+  subscriptionChangeLogs SubscriptionChangeLog[]
+
+  // Блок Q — balance-based billing. `trialEndsAt` is set once at
+  // registration (14-day free trial, lib/subscription.ts::TRIAL_DAYS) and
+  // never touched again — a plan-less org past this date resolves to
+  // RESTRICTED (see resolveSubscriptionState). `balance` is a prepaid
+  // wallet in `baseCurrency`, credited only via lib/billing/
+  // subscription-billing.ts::creditBalance (manually by a platform admin
+  // until a real payment provider is wired in — see
+  // docs/handbook/payment-provider-setup.md) and debited only via the same
+  // module's attemptSettleInvoice. Arithmetic on this field must use
+  // Prisma.Decimal methods, not Number() — this is a real ledger, unlike
+  // the ad hoc float math used for report display elsewhere in the app.
+  balance              Decimal               @default(0) @db.Decimal(12, 2)
+  trialEndsAt          DateTime?
+  balanceTransactions  BalanceTransaction[]
+  subscriptionInvoices SubscriptionInvoice[]
+
+  // Block E: fiscal receipt (ОФД) settings — opt-in per org, only
+  // "ATOL_ONLINE" meaningful today (src/lib/fiscal/atol-provider.ts).
+  // Registration is skipped entirely (never blocks a retail sale) when
+  // fiscalProvider is null. group_code/inn/payment_address/sno are not
+  // secret, kept as plain scalars (same precedent as baseCurrency).
+  fiscalProvider              String?
+  fiscalGroupCode             String?
+  fiscalInn                   String?
+  fiscalPaymentAddress        String?
+  fiscalSno                   String?
+  // login/password (the actual secret) — encrypted with this org's DEK via
+  // lib/crypto.ts::encryptSecret, the same primitive VaultServiceEntry
+  // uses, but stored directly here rather than as a VaultServiceEntry row:
+  // that model is built for human-viewed/access-granted secrets
+  // (EmployeeVaultAccess, audit-logged views), not credentials a background
+  // job (the fiscal-status cron, checkout) reads programmatically. See
+  // lib/fiscal/credentials.ts.
+  fiscalCredentialsCiphertext Bytes?
+  fiscalCredentialsNonce      Bytes?
+  fiscalCredentialsAuthTag    Bytes?
+
+  memberships             Membership[]
+  employees               Employee[]
+  groups                  Group[]
+  clients                 Client[]
+  catalogItems            CatalogItem[]
+  catalogGroups           CatalogGroup[]
+  units                   Unit[]
+  characteristics         Characteristic[]
+  packagingTypes          PackagingType[]
+  labelTemplates          LabelTemplate[]
+  orders                  Order[]
+  purchaseOrders          PurchaseOrder[]
+  invoicesOut             InvoiceOut[]
+  invoicesIn              InvoiceIn[]
+  payments                Payment[]
+  vaultEntries            VaultServiceEntry[]
+  tags                    Tag[]
+  stores                  Store[]
+  stockMovements          StockMovement[]
+  stockBatches            StockBatch[]
+  salesChannels           SalesChannel[]
+  contracts               Contract[]
+  legalEntities           LegalEntity[]
+  documentStatuses        DocumentStatus[]
+  customFieldDefinitions  CustomFieldDefinition[]
+  exchangeRates           ExchangeRate[]
+  webhooks                Webhook[]
+  customRoles             CustomRole[]
+  techCards               TechCard[]
+  productionOrders        ProductionOrder[]
+  processingStages        ProcessingStage[]
+  techProcesses           TechProcess[]
+  productionStages        ProductionStage[]
+  importJobs              ImportJob[]
+  scenarioRules           ScenarioRule[]
+  notifications           Notification[]
+  retailShifts            RetailShift[]
+  retailSales             RetailSale[]
+  retailReturns           RetailReturn[]
+  fiscalReceipts          FiscalReceipt[]
+  projects                Project[]
+  stockReservations       StockReservation[]
+  apiKeys                 ApiKey[]
+  auditLogs               AuditLog[]
+  priceTypes              PriceType[]
+  discounts               Discount[]
+  customEntityTypes       CustomEntityType[]
+  tasks                   Task[]
+  comments                Comment[]
+  expenseItems            ExpenseItem[]
+  cashOrders              CashOrder[]
+  counterpartyAdjustments CounterpartyAdjustment[]
+  attachments             Attachment[]
+  exportJobs              ExportJob[]
+  pickingWaves            PickingWave[]
 }
 
 model Membership {
@@ -98,8 +176,8 @@ model Membership {
   // permissions (Block I) resolves to a concrete assignedEmployeeId, and so
   // an Employee can be given self-service dashboard access. Optional — most
   // orgs will have Employee rows that never get a login at all.
-  employeeId String?     @unique
-  employee   Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  employeeId   String?     @unique
+  employee     Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
   // Overrides the base enum `role` with a per-org custom permission matrix
   // (Block I) when set; falls back to the enum-based matrix when null.
   customRoleId String?
@@ -166,44 +244,71 @@ model Employee {
   defaultLegalEntityId String?
   defaultLegalEntity   LegalEntity? @relation(fields: [defaultLegalEntityId], references: [id], onDelete: SetNull)
 
+  // Block M4 phase B: self-service preference for PrintDialog's "Скачать
+  // PDF" button — true opens the server-rendered PDF inline in a new tab
+  // (target="_blank"), false forces a save-as download instead. Purely a
+  // UI convenience, same self-service pattern as defaultStoreId above.
+  openPdfInBrowser Boolean @default(false)
+
   // Block I2.1: OWN_GROUP visibility scope groups employees by this —
   // optional, an unassigned employee's OWN_GROUP behaves like OWN for them.
   groupId String?
   group   Group?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
 
-  ordersAssigned           Order[]               @relation("AssignedEmployee")
-  purchaseOrdersAssigned   PurchaseOrder[]       @relation("AssignedEmployeePO")
-  productionOrdersAssigned ProductionOrder[]     @relation("AssignedEmployeeProduction")
-  clientsAssigned          Client[]              @relation("AssignedEmployeeClient")
+  ordersAssigned             Order[]                     @relation("AssignedEmployee")
+  purchaseOrdersAssigned     PurchaseOrder[]             @relation("AssignedEmployeePO")
+  productionOrdersAssigned   ProductionOrder[]           @relation("AssignedEmployeeProduction")
+  clientsAssigned            Client[]                    @relation("AssignedEmployeeClient")
   productionStageCompletions ProductionStageCompletion[]
-  vaultAccess              EmployeeVaultAccess[]
+  shiftsOpened               RetailShift[]               @relation("ShiftOpenedBy")
+  shiftsClosed               RetailShift[]               @relation("ShiftClosedBy")
+  cashTransactions           CashTransaction[]
+  vaultAccess                EmployeeVaultAccess[]
   // Opposite side of Membership.employeeId — set only if this employee has
   // been granted a personal login (Block I self-service).
-  membership               Membership?
+  membership                 Membership?
+  projectsResponsible        Project[]                   @relation("ResponsibleEmployeeProject")
+  apiKeysCreated             ApiKey[]
+  tasksAssigned              Task[]                      @relation("TaskAssignee") // Task.assignedEmployeeId
+  tasksCreated               Task[]                      @relation("TaskCreator")
+  comments                   Comment[]
+  cashOrdersCreated          CashOrder[]
+  adjustmentsCreated         CounterpartyAdjustment[]
+  attachmentsUploaded        Attachment[]
+  pickingWavesCreated        PickingWave[]
 
   @@index([orgId, status])
   @@index([orgId, groupId])
 }
 
 model Client {
-  id         String       @id @default(cuid())
-  orgId      String
-  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name       String
-  inn        String?
-  phone      String?
-  email      String?
-  address    String?
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  inn         String?
+  phone       String?
+  email       String?
+  address     String?
   // Legal/banking requisites (D4) — optional, only meaningful for
   // organization counterparties, not individuals.
-  kpp        String?
-  ogrn       String?
-  bankName   String?
-  bankBik    String?
+  kpp         String?
+  ogrn        String?
+  bankName    String?
+  bankBik     String?
   bankAccount String?
-  status     EntityStatus @default(ACTIVE)
-  archivedAt DateTime?
-  createdAt  DateTime     @default(now())
+  status      EntityStatus @default(ACTIVE)
+  archivedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  // Block E: marks the one auto-created "Розничный покупатель" placeholder
+  // per org, used as Payment.counterpartyId for a walk-in retail sale with
+  // no real client picked (Payment.counterpartyId is NOT nullable). No
+  // unique constraint — find-first-then-create in
+  // lib/retail-walk-in-client.ts, same tolerance for a rare create-race as
+  // elsewhere in the project; consequence of a duplicate is mild (two
+  // placeholder rows), not corruption.
+  isWalkIn Boolean @default(false)
 
   // Block I2.1: powers OWN/OWN_GROUP visibility scope on the "clients"
   // resource — set to the creating employee on createClient/quickCreateClient
@@ -214,13 +319,18 @@ model Client {
   assignedEmployee   Employee? @relation("AssignedEmployeeClient", fields: [assignedEmployeeId], references: [id])
 
   orders         Order[]
-  purchaseOrders PurchaseOrder[] @relation("Supplier")
+  purchaseOrders PurchaseOrder[]          @relation("Supplier")
   invoicesOut    InvoiceOut[]
-  invoicesIn     InvoiceIn[]     @relation("InvoiceInSupplier")
+  invoicesIn     InvoiceIn[]              @relation("InvoiceInSupplier")
   payments       Payment[]
   contacts       ClientContact[]
   addresses      ClientAddress[]
   contracts      Contract[]
+  retailSales    RetailSale[]
+  retailReturns  RetailReturn[]
+  projects       Project[]
+  cashOrders     CashOrder[]
+  adjustments    CounterpartyAdjustment[]
 
   @@index([orgId, status])
 }
@@ -257,7 +367,7 @@ model ClientAddress {
 // counterparty (D2) — deliberately minimal (just a reference + optional
 // number/date), not a document-management system.
 model Contract {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   clientId  String
@@ -278,7 +388,7 @@ model Contract {
 // Sales channel tag on an Order (D3) — e.g. "Розница"/"Опт"/"Маркетплейс",
 // for reporting only, no behavioural difference between channels yet.
 model SalesChannel {
-  id    String @id @default(cuid())
+  id    String       @id @default(cuid())
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name  String
@@ -288,10 +398,65 @@ model SalesChannel {
   @@unique([orgId, name])
 }
 
+// Order redesign: an optional cost/budget-tracking tag on Order, richer than
+// SalesChannel/Contract per explicit user request (client link, dates,
+// budget, responsible employee) but still no behavioural effect beyond
+// tagging/reporting — no budget-vs-actual computation is wired up.
+// clientId/responsibleEmployeeId are both optional (unlike Contract.clientId,
+// which is required) since a project may exist before either is known.
+model Project {
+  id                    String       @id @default(cuid())
+  orgId                 String
+  org                   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name                  String
+  clientId              String?
+  client                Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  responsibleEmployeeId String?
+  responsibleEmployee   Employee?    @relation("ResponsibleEmployeeProject", fields: [responsibleEmployeeId], references: [id], onDelete: SetNull)
+  startDate             DateTime?
+  endDate               DateTime?
+  // Planning/target amount — snapshots the org's base currency at creation,
+  // no per-project currency picker and no conversion; not automatically
+  // compared against Order/Payment totals (that's a separate, unrequested
+  // budget-vs-actual feature).
+  budget                Decimal?     @db.Decimal(14, 2)
+  currency              String       @default("RUB")
+  status                EntityStatus @default(ACTIVE)
+  archivedAt            DateTime?
+  createdAt             DateTime     @default(now())
+
+  orders Order[]
+
+  @@index([orgId, status])
+  @@index([clientId])
+}
+
 enum CatalogItemType {
   PRODUCT
   SERVICE
   BUNDLE
+}
+
+// Block O phase 2 — closes the gap flagged in
+// docs/handbook/retail-integrations/atol-fiscalization.md: ATOL Online
+// receipts were hardcoded to "none" (без НДС) because no VAT rate existed
+// anywhere on CatalogItem. Real Russian VAT rates are a small, legally fixed
+// set (not something an org invents its own values for), so this is a plain
+// enum rather than a full CRUD-able dictionary like МойСклад's own
+// `taxrate` — a deliberate, documented simplification, same "МойСклад-
+// inspired, not a byte-for-byte clone" precedent as everywhere else in this
+// project. VAT_10_110/VAT_20_120 are the "calculated" rates (VAT already
+// baked into the shelf price) — the normal case for retail; VAT_0/VAT_10/
+// VAT_20 are "added on top" (normal case for B2B invoicing at a
+// VAT-exclusive price). Maps 1:1 to ATOL Online's own `vat.type` values —
+// see lib/fiscal/atol-provider.ts::VAT_TYPE_MAP.
+enum TaxRateType {
+  NONE
+  VAT_0
+  VAT_10
+  VAT_20
+  VAT_10_110
+  VAT_20_120
 }
 
 // Reference dictionary of measurement units (шт, кг, м² и т.д.), scoped per
@@ -299,14 +464,15 @@ enum CatalogItemType {
 // unit is referenced by a CatalogItem, deletion is blocked in the action
 // layer (and backstopped by onDelete: Restrict below).
 model Unit {
-  id        String   @id @default(cuid())
+  id        String       @id @default(cuid())
   orgId     String
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name      String
   shortName String
-  createdAt DateTime @default(now())
+  createdAt DateTime     @default(now())
 
   catalogItems CatalogItem[]
+  packagings   CatalogItemPackaging[]
 
   @@unique([orgId, name])
   @@index([orgId])
@@ -316,7 +482,7 @@ model Unit {
 // archived — deletion is blocked in the action layer if it still holds
 // subgroups or catalog items.
 model CatalogGroup {
-  id       String  @id @default(cuid())
+  id       String         @id @default(cuid())
   orgId    String
   org      Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name     String
@@ -326,6 +492,10 @@ model CatalogGroup {
 
   catalogItems CatalogItem[]
 
+  // Block J: lets the import's find-or-create-by-path resolver rely on a
+  // real DB constraint to catch a create-race between two rows of the same
+  // batch/import creating the same not-yet-existing group concurrently.
+  @@unique([orgId, parentId, name])
   @@index([orgId, parentId])
 }
 
@@ -343,6 +513,15 @@ model CatalogItem {
   unit       Unit?           @relation(fields: [unitId], references: [id], onDelete: Restrict)
   groupId    String?
   group      CatalogGroup?   @relation(fields: [groupId], references: [id], onDelete: Restrict)
+  // Block O phase 2 — see TaxRateType's own comment. Defaults to NONE (без
+  // НДС), same fiscal behavior every existing item already had before this
+  // field existed — adding it is not a behavior change until an org
+  // explicitly sets a real rate.
+  taxRate    TaxRateType     @default(NONE)
+  // Block O phase 7 — МойСклад's stock shortfall report needs a threshold
+  // to compare the current balance against; null means "not tracked for
+  // this item" (excluded from the shortfall view), not "zero allowed".
+  minStock   Decimal?        @db.Decimal(12, 3)
   status     EntityStatus    @default(ACTIVE)
   archivedAt DateTime?
   createdAt  DateTime        @default(now())
@@ -351,22 +530,90 @@ model CatalogItem {
   purchaseOrderLineItems PurchaseOrderLineItem[]
   invoiceOutLineItems    InvoiceOutLineItem[]
   invoiceInLineItems     InvoiceInLineItem[]
-  bundleComponents       CatalogItemComponent[] @relation("BundleComponents")
-  partOfBundles          CatalogItemComponent[] @relation("ComponentOfBundles")
+  bundleComponents       CatalogItemComponent[]  @relation("BundleComponents")
+  partOfBundles          CatalogItemComponent[]  @relation("ComponentOfBundles")
   stockMovementLines     StockMovementLine[]
   stockBatches           StockBatch[]
   variants               CatalogItemVariant[]
   techCardOutputs        TechCard[]              @relation("TechCardOutput")
   techCardComponentOf    TechCardComponent[]     @relation("TechCardComponentItem")
+  retailSaleLineItems    RetailSaleLineItem[]
+  retailReturnLineItems  RetailReturnLineItem[]
+  stockReservations      StockReservation[]
+  prices                 CatalogItemPrice[]
+  // Block R — several named packagings per item (e.g. "поштучно" +
+  // "упаковка по 10 шт" + "рулон 30м"), each with its own quantity/unit/
+  // barcode, МойСклад-style.
+  packagings             CatalogItemPackaging[]
 
   @@index([orgId, status])
   @@index([orgId, groupId])
 }
 
+// Block R — org-wide reference list of packaging kinds ("Рулон", "Коробка",
+// "Паллета"...), same minimal shape as Unit/CatalogGroup — created inline
+// via PackagingTypeCombobox's quick-create dialog, no dedicated management
+// page in this block (deliberate scope cut, see ROADMAP.md).
+model PackagingType {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime     @default(now())
+
+  packagings CatalogItemPackaging[]
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+// Block R — one named packaging variant of a CatalogItem: a quantity of the
+// item in some unit (any Unit, not necessarily the item's own unitId),
+// optionally with its own scannable barcode. Doesn't participate in orders/
+// stock yet (purely a reference/print attribute) — see ROADMAP.md for the
+// explicit scope note.
+model CatalogItemPackaging {
+  id              String        @id @default(cuid())
+  catalogItemId   String
+  catalogItem     CatalogItem   @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  packagingTypeId String
+  packagingType   PackagingType @relation(fields: [packagingTypeId], references: [id], onDelete: Restrict)
+  quantity        Decimal       @db.Decimal(12, 3)
+  unitId          String?
+  unit            Unit?         @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  barcode         String?
+  createdAt       DateTime      @default(now())
+
+  @@index([catalogItemId])
+}
+
+// Block R — org-scoped saved label layout (МойСклад-style label
+// constructor): physical size + an ordered list of freely positioned
+// elements. Coordinates/sizes are stored in mm — the same unit widthMm/
+// heightMm use — so printing applies them directly via CSS `mm` units with
+// no scale conversion; only the on-screen editor canvas applies its own
+// px-per-mm zoom for comfortable dragging.
+model LabelTemplate {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  widthMm   Int
+  heightMm  Int
+  // Array<{ id, type: "text"|"field"|"barcode", field?: "name"|"sku"|
+  // "price"|"barcode", text?: string, x, y, width, height, fontSize,
+  // bold? }> — see lib/label-template.ts for the parsed shape.
+  elements  Json
+  createdAt DateTime     @default(now())
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
 // A characteristic dictionary (e.g. "Размер", "Цвет") — org-scoped, reused
 // across variants of different products, same pattern as Unit/CatalogGroup.
 model Characteristic {
-  id    String @id @default(cuid())
+  id    String       @id @default(cuid())
   orgId String
   org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   name  String
@@ -377,11 +624,13 @@ model Characteristic {
 }
 
 // A modification of a PRODUCT-type CatalogItem (e.g. "Стул, размер L,
-// цвет красный") — own SKU/barcode/optional price override. Deliberately
-// scoped WITHOUT its own stock ledger for this pass: stock is still tracked
-// only at the base CatalogItem level (see lib/stock.ts) — variant-level
-// stock granularity is a real follow-up, not implemented yet, to avoid
-// reworking the ledger and every fulfilment flow in the same change.
+// цвет красный") — own SKU/barcode/optional price override. Block M6: full
+// variant-level stock granularity — StockMovementLine/StockBatch/
+// StockBatchAllocation and every purchasing/sales line item can reference a
+// variant; the ledger and FIFO costing track balances and cost per
+// (catalogItem, variant), not just per catalogItem. Production
+// (PRODUCTION_CONSUME/PRODUCTION_OUTPUT) is the one deliberate exception —
+// see the StockMovementLine comment.
 model CatalogItemVariant {
   id            String       @id @default(cuid())
   catalogItemId String
@@ -393,9 +642,17 @@ model CatalogItemVariant {
   archivedAt    DateTime?
   createdAt     DateTime     @default(now())
 
-  values             CatalogItemVariantValue[]
-  lineItems          OrderLineItem[]
-  invoiceOutLineItems InvoiceOutLineItem[]
+  values                 CatalogItemVariantValue[]
+  lineItems              OrderLineItem[]
+  invoiceOutLineItems    InvoiceOutLineItem[]
+  purchaseOrderLineItems PurchaseOrderLineItem[]
+  invoiceInLineItems     InvoiceInLineItem[]
+  stockMovementLines     StockMovementLine[]
+  stockBatches           StockBatch[]
+  stockBatchAllocations  StockBatchAllocation[]
+  retailSaleLineItems    RetailSaleLineItem[]
+  retailReturnLineItems  RetailReturnLineItem[]
+  stockReservations      StockReservation[]
 
   @@index([catalogItemId, status])
 }
@@ -427,6 +684,71 @@ model CatalogItemComponent {
   @@index([bundleId])
 }
 
+// --- Block J: Excel/CSV catalog import -------------------------------------
+// There is no in-process background-job runner or external scheduler wired
+// up in this project (see lib/webhooks.ts's retry queue for the same gap) —
+// so an import run is driven entirely by the browser, which calls
+// processImportBatch repeatedly with slices of the already-parsed file.
+// ImportJob/ImportJobRow exist purely to track that browser-driven progress
+// for the history screen, not to represent a real background queue.
+enum ImportJobStatus {
+  RUNNING
+  COMPLETED
+  // Never set by any scheduled process (there is none) — assigned lazily,
+  // only when the history page renders a RUNNING job whose startedAt is
+  // stale (tab closed mid-import), not proactively.
+  ABANDONED
+}
+
+model ImportJob {
+  id            String          @id @default(cuid())
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdById   String
+  createdBy     User            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  fileName      String
+  // "AUTO" | "SKU" | "BARCODE" | "NAME" — which field new rows are matched
+  // against on import; kept as a plain string (not an enum) since it mirrors
+  // a UI selector value, not a schema-wide concept used elsewhere.
+  searchBy      String
+  updateOnly    Boolean         @default(false)
+  // Snapshot of the column-mapping wizard step, for the history screen.
+  columnMapping Json
+  totalRows     Int
+  processedRows Int             @default(0)
+  createdCount  Int             @default(0)
+  updatedCount  Int             @default(0)
+  errorCount    Int             @default(0)
+  status        ImportJobStatus @default(RUNNING)
+  startedAt     DateTime        @default(now())
+  finishedAt    DateTime?
+
+  rows ImportJobRow[]
+
+  @@index([orgId, startedAt])
+}
+
+model ImportJobRow {
+  id            String    @id @default(cuid())
+  importJobId   String
+  importJob     ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+  // 1-based, counting from the first data row (header excluded) — what the
+  // user sees when they open the file themselves.
+  rowNumber     Int
+  // Only populated for a failed row — enough to regenerate a "failed rows"
+  // download without ever having stored the original file. A successful
+  // row doesn't need this: it's already reflected in the real CatalogItem
+  // via catalogItemId, storing its raw source too would just duplicate the
+  // whole imported catalog in JSON for no benefit.
+  rawData       Json?
+  success       Boolean
+  error         String?
+  catalogItemId String?
+  createdNew    Boolean   @default(false)
+
+  @@index([importJobId, success])
+}
+
 // --- Warehouses & stock -------------------------------------------------
 // Stock is never stored as a mutable balance — it's always derived from the
 // StockMovementLine ledger (see lib/stock.ts), so it can't drift out of sync
@@ -446,11 +768,16 @@ model Store {
   archivedAt DateTime?
   createdAt  DateTime     @default(now())
 
-  movementsAsSource      StockMovement[] @relation("SourceStore")
-  movementsAsDestination StockMovement[] @relation("DestinationStore")
-  productionOrdersAsMaterialsStore ProductionOrder[] @relation("ProductionMaterialsStore")
-  productionOrdersAsProductsStore  ProductionOrder[] @relation("ProductionProductsStore")
-  employeesWithDefaultStore Employee[]
+  movementsAsSource                StockMovement[]    @relation("SourceStore")
+  movementsAsDestination           StockMovement[]    @relation("DestinationStore")
+  productionOrdersAsMaterialsStore ProductionOrder[]  @relation("ProductionMaterialsStore")
+  productionOrdersAsProductsStore  ProductionOrder[]  @relation("ProductionProductsStore")
+  employeesWithDefaultStore        Employee[]
+  retailShifts                     RetailShift[]
+  retailSales                      RetailSale[]
+  retailReturns                    RetailReturn[]
+  ordersAsStore                    Order[]            @relation("OrderStore")
+  reservations                     StockReservation[] @relation("ReservationStore")
 
   @@index([orgId, status])
 }
@@ -480,32 +807,52 @@ enum StockMovementType {
   PURCHASE_RETURN
   PRODUCTION_CONSUME
   PRODUCTION_OUTPUT
+  // Block E: retail POS checkout — subtracts stock like DEMAND (a walk-in
+  // sale is a customer sale, just without an Order document behind it).
+  RETAIL_SALE
+  // Block E: retail POS return — adds stock like SALES_RETURN.
+  RETAIL_RETURN
 }
 
 // Movements are immutable once created — a mistake is corrected with another
 // (reversing) movement, not by editing history, same principle as ledger
-// entries in accounting systems.
+// entries in accounting systems. Single documented exception: a DEMAND
+// movement created via "Создать документ" → "Отгрузка" on an Order starts as
+// a draft (isPosted: false, no stock/FIFO/reservation effect at all — see
+// every "ground truth" reader listed at lib/stock.ts::getStockBalances,
+// lib/orders.ts, lib/reports.ts, which all filter to isPosted: true) and can
+// have its store/line quantities replaced wholesale until
+// actions/fulfillment.ts::postDraftDemand finalizes it. Every other type/path
+// still creates-and-posts atomically, isPosted defaulting to true so nothing
+// about them changes.
 model StockMovement {
-  id              String            @id @default(cuid())
-  orgId           String
-  org             Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  type            StockMovementType
-  number          Int
-  storeId         String
-  store           Store             @relation("SourceStore", fields: [storeId], references: [id], onDelete: Restrict)
-  toStoreId       String?
-  toStore         Store?            @relation("DestinationStore", fields: [toStoreId], references: [id], onDelete: Restrict)
-  comment         String?
-  createdAt       DateTime          @default(now())
+  id                String            @id @default(cuid())
+  orgId             String
+  org               Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type              StockMovementType
+  number            Int
+  storeId           String
+  store             Store             @relation("SourceStore", fields: [storeId], references: [id], onDelete: Restrict)
+  toStoreId         String?
+  toStore           Store?            @relation("DestinationStore", fields: [toStoreId], references: [id], onDelete: Restrict)
+  comment           String?
+  createdAt         DateTime          @default(now())
+  isPosted          Boolean           @default(true)
+  postedAt          DateTime?
   // Only set for type = DEMAND / SUPPLY / PRODUCTION_CONSUME|OUTPUT
   // respectively — the document this movement fulfils, for traceability
   // ("which shipments came out of this order?").
-  orderId         String?
-  order           Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  purchaseOrderId String?
-  purchaseOrder   PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  orderId           String?
+  order             Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  purchaseOrderId   String?
+  purchaseOrder     PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
   productionOrderId String?
-  productionOrder   ProductionOrder? @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  productionOrder   ProductionOrder?  @relation(fields: [productionOrderId], references: [id], onDelete: Restrict)
+  // Block E: same provenance idea, for type = RETAIL_SALE / RETAIL_RETURN.
+  retailSaleId      String?           @unique
+  retailSale        RetailSale?       @relation(fields: [retailSaleId], references: [id], onDelete: Restrict)
+  retailReturnId    String?           @unique
+  retailReturn      RetailReturn?     @relation(fields: [retailReturnId], references: [id], onDelete: Restrict)
 
   lines StockMovementLine[]
 
@@ -517,33 +864,39 @@ model StockMovement {
 }
 
 model StockMovementLine {
-  id                String        @id @default(cuid())
+  id                String              @id @default(cuid())
   movementId        String
-  movement          StockMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  movement          StockMovement       @relation(fields: [movementId], references: [id], onDelete: Cascade)
   catalogItemId     String
-  catalogItem       CatalogItem   @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  quantity          Decimal       @db.Decimal(12, 3)
-  countedQuantity   Decimal?      @db.Decimal(12, 3)
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  // Block M6: which modification this line moves, if any. Always null for
+  // PRODUCTION_CONSUME/PRODUCTION_OUTPUT — TechCard has no variant concept,
+  // a deliberate scope cut (see ROADMAP.md M6).
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  countedQuantity   Decimal?            @db.Decimal(12, 3)
   // Sale price (DEMAND) or purchase cost (SUPPLY) snapshotted at posting
   // time — same reasoning as OrderLineItem.unitPriceSnapshot: later catalog
   // price edits must not retroactively change historical documents.
-  unitPriceSnapshot Decimal?      @db.Decimal(12, 2)
+  unitPriceSnapshot Decimal?            @db.Decimal(12, 2)
   // Currency of unitPriceSnapshot (Block H2), carried over from the
   // order/PO line being fulfilled. Null wherever unitPriceSnapshot is null
   // (ENTER/LOSS/MOVE/INVENTORY have no price at all).
   currency          String?
   // Block M2: rate to baseCurrency at posting time, null if currency ==
   // baseCurrency or a pre-M2 row — see lib/currency.ts::getRateAt.
-  rateSnapshot      Decimal?      @db.Decimal(14, 6)
+  rateSnapshot      Decimal?            @db.Decimal(14, 6)
 
   // Block M1: set only for a SUPPLY line — the batch this receipt created.
-  batchSource       StockBatch?             @relation("BatchSource")
+  batchSource      StockBatch?            @relation("BatchSource")
   // Block M1: set only for a DEMAND line — which batch(es) this sale drew
   // from (FIFO), possibly several if the oldest batch didn't have enough.
-  batchAllocations  StockBatchAllocation[]  @relation("BatchAllocationDemand")
+  batchAllocations StockBatchAllocation[] @relation("BatchAllocationDemand")
 
   @@index([movementId])
   @@index([catalogItemId])
+  @@index([catalogItemId, variantId])
 }
 
 // Block M1 — one row per SUPPLY receipt line, tracks its own remaining
@@ -556,50 +909,65 @@ model StockMovementLine {
 // period-based cost approximation, a documented scope boundary, not an
 // oversight.
 model StockBatch {
-  id                   String       @id @default(cuid())
+  id                   String              @id @default(cuid())
   orgId                String
-  org                  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org                  Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   catalogItemId        String
-  catalogItem          CatalogItem  @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
-  sourceMovementLineId String       @unique
-  sourceMovementLine   StockMovementLine @relation("BatchSource", fields: [sourceMovementLineId], references: [id], onDelete: Cascade)
-  unitCost             Decimal      @db.Decimal(12, 2)
+  catalogItem          CatalogItem         @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  // Block M6: batches are scoped per (catalogItem, variant) — a null-variant
+  // batch pool is entirely separate from any variant-specific pool, never
+  // mixed by allocateFifo (see lib/stock-batches.ts).
+  variantId            String?
+  variant              CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  sourceMovementLineId String              @unique
+  sourceMovementLine   StockMovementLine   @relation("BatchSource", fields: [sourceMovementLineId], references: [id], onDelete: Cascade)
+  unitCost             Decimal             @db.Decimal(12, 2)
   currency             String?
   // Block M2: rate to baseCurrency at receipt time — the cost basis is
   // fixed when the purchase is paid for, not when the batch later sells,
   // so this is captured once here and never re-looked-up. Null if
   // currency == baseCurrency or a pre-M2 row.
-  rateSnapshot         Decimal?     @db.Decimal(14, 6)
-  initialQuantity      Decimal      @db.Decimal(12, 3)
+  rateSnapshot         Decimal?            @db.Decimal(14, 6)
+  initialQuantity      Decimal             @db.Decimal(12, 3)
   // Decremented FIFO as DEMAND lines consume from it via StockBatchAllocation.
   // Never deleted once it hits 0 — allocations still need it for history.
-  remainingQuantity    Decimal      @db.Decimal(12, 3)
-  createdAt            DateTime     @default(now())
+  remainingQuantity    Decimal             @db.Decimal(12, 3)
+  // Block O phase 8 — МойСклад's consignment (партия со сроком годности).
+  // Both optional, set at receiving time (ENTER/SUPPLY) — a batch with
+  // neither is an ordinary FIFO cost-tracking batch exactly as before this
+  // phase, no behavior change for orgs that don't use lot tracking.
+  label                String?
+  expiryDate           DateTime?
+  createdAt            DateTime            @default(now())
 
   allocations StockBatchAllocation[]
 
-  @@index([orgId, catalogItemId, createdAt])
+  @@index([orgId, catalogItemId, variantId, createdAt])
 }
 
 // One row per (DEMAND line, batch it drew from) — a single sale can span
 // multiple batches when the oldest one doesn't have enough left, so this is
 // a join table rather than a single batchId column on StockMovementLine.
 model StockBatchAllocation {
-  id           String     @id @default(cuid())
+  id           String              @id @default(cuid())
   batchId      String
-  batch        StockBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  batch        StockBatch          @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  // Block M6: denormalized from batch.variantId at allocation time, same
+  // defensive-snapshot reasoning as unitCost/currency/rateSnapshot below.
+  variantId    String?
+  variant      CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
   demandLineId String
-  demandLine   StockMovementLine @relation("BatchAllocationDemand", fields: [demandLineId], references: [id], onDelete: Cascade)
-  quantity     Decimal    @db.Decimal(12, 3)
+  demandLine   StockMovementLine   @relation("BatchAllocationDemand", fields: [demandLineId], references: [id], onDelete: Cascade)
+  quantity     Decimal             @db.Decimal(12, 3)
   // Snapshotted from batch.unitCost at allocation time, same reasoning as
   // unitPriceSnapshot elsewhere — a later change to the batch record must
   // never retroactively change an already-posted sale's recorded cost.
-  unitCost     Decimal    @db.Decimal(12, 2)
+  unitCost     Decimal             @db.Decimal(12, 2)
   currency     String?
   // Block M2: copied from batch.rateSnapshot at allocation time, same
   // defensive-snapshot reasoning as unitCost/currency above.
-  rateSnapshot Decimal?   @db.Decimal(14, 6)
-  createdAt    DateTime   @default(now())
+  rateSnapshot Decimal?            @db.Decimal(14, 6)
+  createdAt    DateTime            @default(now())
 
   @@index([batchId])
   @@index([demandLineId])
@@ -628,11 +996,11 @@ model LegalEntity {
   archivedAt  DateTime?
   createdAt   DateTime     @default(now())
 
-  orders                Order[]
-  purchaseOrders        PurchaseOrder[]
-  invoicesOut           InvoiceOut[]
-  invoicesIn            InvoiceIn[]
-  employeesWithDefault  Employee[]
+  orders               Order[]
+  purchaseOrders       PurchaseOrder[]
+  invoicesOut          InvoiceOut[]
+  invoicesIn           InvoiceIn[]
+  employeesWithDefault Employee[]
 
   @@index([orgId, status])
 }
@@ -650,6 +1018,11 @@ enum DocumentStatusKind {
   PRODUCTION_ORDER
   INVOICE_OUT
   INVOICE_IN
+  // Block E: generic engine picks this up for free (ensureDefaultStatuses/
+  // getAllowedNextStatusIds are kind-agnostic) — RetailSale gets a status
+  // for consistency, but the POS UI never exposes manual status changes,
+  // a checkout always lands on the kind's default status immediately.
+  RETAIL_SALE
 }
 
 model DocumentStatus {
@@ -670,6 +1043,7 @@ model DocumentStatus {
   productionOrders ProductionOrder[]
   invoicesOut      InvoiceOut[]
   invoicesIn       InvoiceIn[]
+  retailSales      RetailSale[]
   transitionsOut   DocumentStatusTransition[] @relation("TransitionFrom")
   transitionsIn    DocumentStatusTransition[] @relation("TransitionTo")
 
@@ -688,12 +1062,12 @@ model DocumentStatus {
 // this is an ADDITIONAL check on top of, not a replacement for, the base
 // role/scope checks in actions/orders.ts and actions/purchase-orders.ts.
 model DocumentStatusTransition {
-  id           String         @id @default(cuid())
-  fromStatusId String
-  fromStatus   DocumentStatus @relation("TransitionFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
-  toStatusId   String
-  toStatus     DocumentStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
-  allowedRoles Role[]         @default([])
+  id                   String         @id @default(cuid())
+  fromStatusId         String
+  fromStatus           DocumentStatus @relation("TransitionFrom", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatusId           String
+  toStatus             DocumentStatus @relation("TransitionTo", fields: [toStatusId], references: [id], onDelete: Cascade)
+  allowedRoles         Role[]         @default([])
   // Same "who can" idea as allowedRoles, but at CustomRole/Employee
   // granularity (МойСклад studied 2026-08-29: their business-process editor
   // lets you name individual employees or roles for a transition, not just
@@ -702,8 +1076,8 @@ model DocumentStatusTransition {
   // to a union of what it lists. IDs aren't FK-constrained here (an org can
   // delete a CustomRole/Employee later) — stale IDs just stop matching
   // anyone, same failure mode as a since-deleted role would have anyway.
-  allowedCustomRoleIds String[] @default([])
-  allowedEmployeeIds   String[] @default([])
+  allowedCustomRoleIds String[]       @default([])
+  allowedEmployeeIds   String[]       @default([])
 
   @@unique([fromStatusId, toStatusId])
   @@index([fromStatusId])
@@ -748,15 +1122,15 @@ model TechCard {
 }
 
 model TechCardComponent {
-  id            String      @id @default(cuid())
-  techCardId    String
-  techCard      TechCard    @relation(fields: [techCardId], references: [id], onDelete: Cascade)
-  catalogItemId String
-  catalogItem   CatalogItem @relation("TechCardComponentItem", fields: [catalogItemId], references: [id], onDelete: Restrict)
+  id                    String               @id @default(cuid())
+  techCardId            String
+  techCard              TechCard             @relation(fields: [techCardId], references: [id], onDelete: Cascade)
+  catalogItemId         String
+  catalogItem           CatalogItem          @relation("TechCardComponentItem", fields: [catalogItemId], references: [id], onDelete: Restrict)
   // Quantity needed per one outputQuantity batch of the parent TechCard —
   // actual consumption on a ProductionOrder scales this by
   // (order.quantity / techCard.outputQuantity).
-  quantity      Decimal     @db.Decimal(12, 3)
+  quantity              Decimal              @db.Decimal(12, 3)
   // Block F2: which TechProcess position (stage) this material is consumed
   // at, when the parent TechCard has a techProcessId. Null while the parent
   // has no techProcess (single-step, unused); null while it DOES have one
@@ -800,13 +1174,13 @@ model ProcessingStage {
 // availability, cycle checks) is a lot of complexity for little real
 // benefit here. Documented simplification, see ROADMAP.md Block F2.
 model TechProcess {
-  id        String       @id @default(cuid())
-  orgId     String
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name      String
-  status    EntityStatus @default(ACTIVE)
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name       String
+  status     EntityStatus @default(ACTIVE)
   archivedAt DateTime?
-  createdAt DateTime     @default(now())
+  createdAt  DateTime     @default(now())
 
   positions TechProcessPosition[]
   techCards TechCard[]
@@ -886,7 +1260,7 @@ model ProductionOrder {
 // the preceding one (lib/production-stages.ts::computeStageProgress), so
 // there's no denormalized number that can drift out of sync.
 model ProductionStage {
-  id                    String   @id @default(cuid())
+  id                    String              @id @default(cuid())
   orgId                 String
   org                   Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
   productionOrderId     String
@@ -896,8 +1270,8 @@ model ProductionStage {
   // Denormalized copy of techProcessPosition.position, purely so ordering
   // and "am I the last stage" checks don't need an extra join.
   position              Int
-  totalQuantity         Decimal  @db.Decimal(12, 3)
-  completedQuantity     Decimal  @default(0) @db.Decimal(12, 3)
+  totalQuantity         Decimal             @db.Decimal(12, 3)
+  completedQuantity     Decimal             @default(0) @db.Decimal(12, 3)
 
   completions ProductionStageCompletion[]
 
@@ -922,28 +1296,44 @@ model ProductionStageCompletion {
 }
 
 model Order {
-  id                 String       @id @default(cuid())
+  id                 String         @id @default(cuid())
   orgId              String
-  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org                Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   number             Int
   clientId           String?
-  client             Client?      @relation(fields: [clientId], references: [id])
+  client             Client?        @relation(fields: [clientId], references: [id])
   assignedEmployeeId String?
-  assignedEmployee   Employee?    @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
+  assignedEmployee   Employee?      @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id])
   contractId         String?
-  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  contract           Contract?      @relation(fields: [contractId], references: [id], onDelete: SetNull)
   salesChannelId     String?
-  salesChannel       SalesChannel? @relation(fields: [salesChannelId], references: [id], onDelete: SetNull)
+  salesChannel       SalesChannel?  @relation(fields: [salesChannelId], references: [id], onDelete: SetNull)
   legalEntityId      String?
-  legalEntity        LegalEntity?  @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  legalEntity        LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   statusId           String
   status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
-  createdAt          DateTime     @default(now())
+  // Order redesign: warehouse this order ships from, project tag, and the
+  // МойСклад-style Проведено/Резерв flags. storeId is a plain optional FK
+  // like legalEntityId/contractId — the "Резерв requires Проведено+storeId"
+  // invariant is enforced in actions/orders.ts, not the DB, matching this
+  // project's existing convention of app-level invariants over DB
+  // constraints. isPosted alone has no other effect (no general-ledger
+  // concept exists here) — it's solely a prerequisite gate for isReserved.
+  storeId            String?
+  store              Store?         @relation("OrderStore", fields: [storeId], references: [id], onDelete: SetNull)
+  projectId          String?
+  project            Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isPosted           Boolean        @default(false)
+  isReserved         Boolean        @default(false)
+  createdAt          DateTime       @default(now())
 
-  lineItems OrderLineItem[]
-  demands   StockMovement[]
-  payments  Payment[]
-  invoicesOut InvoiceOut[]
+  lineItems         OrderLineItem[]
+  demands           StockMovement[]
+  payments          Payment[]
+  cashOrders        CashOrder[]
+  invoicesOut       InvoiceOut[]
+  reservations      StockReservation[]
+  pickingWaveOrders PickingWaveOrder[]
 
   @@unique([orgId, number])
   @@index([orgId, statusId])
@@ -966,26 +1356,55 @@ model OrderLineItem {
   @@index([orderId])
 }
 
+// Order redesign: a "soft hold" on stock — reduces what's available to sell
+// without touching the StockMovement/StockBatch FIFO ledger, which remains
+// reserved for real physical movements only. One row per (order,
+// catalogItem, variant), wholesale replaced by
+// lib/orders.ts::syncOrderReservations on every order save/ship/return,
+// mirroring how OrderLineItem rows are fully deleted+recreated on every
+// upsertOrder call. quantity = ordered qty minus already-demanded qty for
+// that line, floored at 0 — a row is omitted entirely once it reaches 0,
+// same convention as getStockBalances' `HAVING SUM <> 0`.
+model StockReservation {
+  id            String              @id @default(cuid())
+  orgId         String
+  org           Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  orderId       String
+  order         Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  storeId       String
+  store         Store               @relation("ReservationStore", fields: [storeId], references: [id], onDelete: Restrict)
+  catalogItemId String
+  catalogItem   CatalogItem         @relation(fields: [catalogItemId], references: [id], onDelete: Restrict)
+  variantId     String?
+  variant       CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity      Decimal             @db.Decimal(12, 3)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@unique([orderId, catalogItemId, variantId])
+  @@index([orgId, storeId, catalogItemId, variantId])
+}
+
 model PurchaseOrder {
-  id                 String              @id @default(cuid())
+  id                 String         @id @default(cuid())
   orgId              String
-  org                Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org                Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
   number             Int
   supplierId         String?
-  supplier           Client?             @relation("Supplier", fields: [supplierId], references: [id])
+  supplier           Client?        @relation("Supplier", fields: [supplierId], references: [id])
   assignedEmployeeId String?
-  assignedEmployee   Employee?           @relation("AssignedEmployeePO", fields: [assignedEmployeeId], references: [id])
+  assignedEmployee   Employee?      @relation("AssignedEmployeePO", fields: [assignedEmployeeId], references: [id])
   contractId         String?
-  contract           Contract?           @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  contract           Contract?      @relation(fields: [contractId], references: [id], onDelete: SetNull)
   legalEntityId      String?
-  legalEntity        LegalEntity?        @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  legalEntity        LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
   statusId           String
-  status             DocumentStatus      @relation(fields: [statusId], references: [id], onDelete: Restrict)
-  createdAt          DateTime            @default(now())
+  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdAt          DateTime       @default(now())
 
-  lineItems PurchaseOrderLineItem[]
-  supplies  StockMovement[]
-  payments  Payment[]
+  lineItems  PurchaseOrderLineItem[]
+  supplies   StockMovement[]
+  payments   Payment[]
   invoicesIn InvoiceIn[]
 
   @@unique([orgId, number])
@@ -993,14 +1412,16 @@ model PurchaseOrder {
 }
 
 model PurchaseOrderLineItem {
-  id                String        @id @default(cuid())
+  id                String              @id @default(cuid())
   purchaseOrderId   String
-  purchaseOrder     PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrder     PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   catalogItemId     String
-  catalogItem       CatalogItem   @relation(fields: [catalogItemId], references: [id])
-  quantity          Decimal       @db.Decimal(12, 3)
-  unitPriceSnapshot Decimal       @db.Decimal(12, 2)
-  currency          String        @default("RUB")
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  currency          String              @default("RUB")
 
   @@index([purchaseOrderId])
 }
@@ -1020,23 +1441,23 @@ model PurchaseOrderLineItem {
 // computed on read (Σ lineItems, Σ linked Payment.amount), not stored
 // columns — same as Order's own total.
 model InvoiceOut {
-  id                 String       @id @default(cuid())
-  orgId              String
-  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  number             Int
-  clientId           String?
-  client             Client?      @relation(fields: [clientId], references: [id])
-  contractId         String?
-  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
-  legalEntityId      String?
-  legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  statusId           String
-  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  id            String         @id @default(cuid())
+  orgId         String
+  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number        Int
+  clientId      String?
+  client        Client?        @relation(fields: [clientId], references: [id])
+  contractId    String?
+  contract      Contract?      @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  legalEntityId String?
+  legalEntity   LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId      String
+  status        DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
   // Provenance only — see block comment above. Null for a standalone invoice
   // created without a source order.
-  orderId            String?
-  order              Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
-  createdAt          DateTime     @default(now())
+  orderId       String?
+  order         Order?         @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now())
 
   lineItems InvoiceOutLineItem[]
   payments  Payment[]
@@ -1061,23 +1482,23 @@ model InvoiceOutLineItem {
 }
 
 model InvoiceIn {
-  id                 String       @id @default(cuid())
-  orgId              String
-  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  number             Int
-  supplierId         String?
-  supplier           Client?      @relation("InvoiceInSupplier", fields: [supplierId], references: [id])
-  contractId         String?
-  contract           Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
-  legalEntityId      String?
-  legalEntity        LegalEntity? @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
-  statusId           String
-  status             DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  id              String         @id @default(cuid())
+  orgId           String
+  org             Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number          Int
+  supplierId      String?
+  supplier        Client?        @relation("InvoiceInSupplier", fields: [supplierId], references: [id])
+  contractId      String?
+  contract        Contract?      @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  legalEntityId   String?
+  legalEntity     LegalEntity?   @relation(fields: [legalEntityId], references: [id], onDelete: SetNull)
+  statusId        String
+  status          DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
   // Provenance only — see block comment above. Null for a standalone invoice
   // created without a source purchase order.
-  purchaseOrderId    String?
-  purchaseOrder      PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  createdAt          DateTime     @default(now())
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  createdAt       DateTime       @default(now())
 
   lineItems InvoiceInLineItem[]
   payments  Payment[]
@@ -1087,14 +1508,16 @@ model InvoiceIn {
 }
 
 model InvoiceInLineItem {
-  id                String      @id @default(cuid())
+  id                String              @id @default(cuid())
   invoiceInId       String
-  invoiceIn         InvoiceIn   @relation(fields: [invoiceInId], references: [id], onDelete: Cascade)
+  invoiceIn         InvoiceIn           @relation(fields: [invoiceInId], references: [id], onDelete: Cascade)
   catalogItemId     String
-  catalogItem       CatalogItem @relation(fields: [catalogItemId], references: [id])
-  quantity          Decimal     @db.Decimal(12, 3)
-  unitPriceSnapshot Decimal     @db.Decimal(12, 2)
-  currency          String      @default("RUB")
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  currency          String              @default("RUB")
 
   @@index([invoiceInId])
 }
@@ -1102,6 +1525,14 @@ model InvoiceInLineItem {
 enum PaymentDirection {
   IN
   OUT
+}
+
+// Block E: only meaningful for retail (cash-drawer reconciliation needs to
+// know which sales were cash vs card) — null for every other Payment kind,
+// no behavior change for existing consumers.
+enum PaymentMethod {
+  CASH
+  CARD
 }
 
 // A minimal money ledger — enough to answer "who owes us / who do we owe"
@@ -1133,11 +1564,199 @@ model Payment {
   invoiceOut      InvoiceOut?      @relation(fields: [invoiceOutId], references: [id], onDelete: SetNull)
   invoiceInId     String?
   invoiceIn       InvoiceIn?       @relation(fields: [invoiceInId], references: [id], onDelete: SetNull)
+  // Block E: retail checkout/return — mirrors the orderId/purchaseOrderId/
+  // invoiceOutId/invoiceInId optional-link pattern exactly.
+  retailSaleId    String?          @unique
+  retailSale      RetailSale?      @relation(fields: [retailSaleId], references: [id], onDelete: SetNull)
+  retailReturnId  String?          @unique
+  retailReturn    RetailReturn?    @relation(fields: [retailReturnId], references: [id], onDelete: SetNull)
+  method          PaymentMethod?
   comment         String?
   createdAt       DateTime         @default(now())
 
   @@index([orgId])
   @@index([counterpartyId])
+}
+
+// --- Block E: retail (kassa) -----------------------------------------------
+// A retail sale is a walk-in checkout at a Store — the POS analogue of
+// Order+demand+Payment combined into one instant action, tied to a
+// RetailShift for cash reconciliation. See ROADMAP.md Block E for the full
+// design (scope cuts, ATOL Online fiscalization, card-terminal
+// architecture).
+
+enum RetailShiftStatus {
+  OPEN
+  CLOSED
+}
+
+model RetailShift {
+  id                 String            @id @default(cuid())
+  orgId              String
+  org                Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  storeId            String
+  store              Store             @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  openedById         String
+  openedBy           Employee          @relation("ShiftOpenedBy", fields: [openedById], references: [id], onDelete: Restrict)
+  openingCashAmount  Decimal           @db.Decimal(12, 2)
+  closedById         String?
+  closedBy           Employee?         @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  // Computed server-side at close time (opening + cash sales + cash-ins -
+  // cash-outs - cash refunds) — never trusted from the client. Compared
+  // against countedCashAmount for the reconciliation report; a mismatch is
+  // surfaced, never silently corrected.
+  expectedCashAmount Decimal?          @db.Decimal(12, 2)
+  countedCashAmount  Decimal?          @db.Decimal(12, 2)
+  status             RetailShiftStatus @default(OPEN)
+  openedAt           DateTime          @default(now())
+  closedAt           DateTime?
+
+  cashTransactions CashTransaction[]
+  sales            RetailSale[]
+  returns          RetailReturn[]
+
+  // Enforced at the application level (one OPEN shift per store) rather
+  // than a DB constraint — same convention as most business invariants in
+  // this project (e.g. one active ImportJob doesn't need one either).
+  @@index([orgId, storeId, status])
+}
+
+enum CashTransactionType {
+  CASH_IN
+  CASH_OUT
+}
+
+model CashTransaction {
+  id          String              @id @default(cuid())
+  shiftId     String
+  shift       RetailShift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  type        CashTransactionType
+  amount      Decimal             @db.Decimal(12, 2)
+  comment     String?
+  createdById String
+  createdBy   Employee            @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime            @default(now())
+
+  @@index([shiftId])
+}
+
+model RetailSale {
+  id        String         @id @default(cuid())
+  orgId     String
+  org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number    Int
+  shiftId   String
+  shift     RetailShift    @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  storeId   String
+  store     Store          @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  clientId  String
+  client    Client         @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  statusId  String
+  status    DocumentStatus @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  createdAt DateTime       @default(now())
+
+  lineItems     RetailSaleLineItem[]
+  payment       Payment?
+  fiscalReceipt FiscalReceipt?
+  returns       RetailReturn[]
+  stockMovement StockMovement?
+
+  @@unique([orgId, number])
+  @@index([orgId, storeId])
+}
+
+model RetailSaleLineItem {
+  id                String              @id @default(cuid())
+  retailSaleId      String
+  retailSale        RetailSale          @relation(fields: [retailSaleId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  currency          String              @default("RUB")
+
+  @@index([retailSaleId])
+}
+
+model RetailReturn {
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number       Int
+  shiftId      String
+  shift        RetailShift  @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  storeId      String
+  store        Store        @relation(fields: [storeId], references: [id], onDelete: Restrict)
+  clientId     String
+  client       Client       @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  // Provenance only, like InvoiceOut.orderId — never re-synced if the
+  // original sale is somehow altered after the fact (it can't be, sales are
+  // immutable, but the principle is the same across the project).
+  retailSaleId String?
+  retailSale   RetailSale?  @relation(fields: [retailSaleId], references: [id], onDelete: SetNull)
+  createdAt    DateTime     @default(now())
+
+  lineItems     RetailReturnLineItem[]
+  payment       Payment?
+  stockMovement StockMovement?
+
+  @@unique([orgId, number])
+  @@index([orgId, storeId])
+}
+
+model RetailReturnLineItem {
+  id                String              @id @default(cuid())
+  retailReturnId    String
+  retailReturn      RetailReturn        @relation(fields: [retailReturnId], references: [id], onDelete: Cascade)
+  catalogItemId     String
+  catalogItem       CatalogItem         @relation(fields: [catalogItemId], references: [id])
+  variantId         String?
+  variant           CatalogItemVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity          Decimal             @db.Decimal(12, 3)
+  unitPriceSnapshot Decimal             @db.Decimal(12, 2)
+  currency          String              @default("RUB")
+
+  @@index([retailReturnId])
+}
+
+enum FiscalReceiptStatus {
+  PENDING
+  REGISTERED
+  FAILED
+}
+
+enum FiscalDocumentType {
+  RETAIL_SALE
+  RETAIL_RETURN
+}
+
+// One row per fiscal registration attempt — mirrors WebhookDelivery's
+// shape (status/error/payload), polled the same way by a new cron route
+// since ATOL registration is async (see lib/fiscal/). documentType/
+// documentId is the same generic-link convention Block K's Notification
+// already established, even though today only RETAIL_SALE actually wires
+// through (retailSaleId is the concrete FK; documentId duplicates it for
+// that case, and would carry a RetailReturn.id if that path is wired up
+// later without a schema change).
+model FiscalReceipt {
+  id              String              @id @default(cuid())
+  orgId           String
+  org             Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  documentType    FiscalDocumentType
+  documentId      String
+  retailSaleId    String?             @unique
+  retailSale      RetailSale?         @relation(fields: [retailSaleId], references: [id], onDelete: SetNull)
+  status          FiscalReceiptStatus @default(PENDING)
+  atolUuid        String?
+  requestPayload  Json?
+  responsePayload Json?
+  error           String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([orgId, status])
 }
 
 // --- Password vault ---------------------------------------------------
@@ -1247,6 +1866,11 @@ enum CustomFieldType {
   DATE
   BOOLEAN
   SELECT
+  // Block O phase 5 (МойСклад's customentity): like SELECT, but the option
+  // list is sourced live from a reusable CustomEntityType's values instead
+  // of a one-off list typed into this definition — lets one dictionary
+  // (e.g. "Бренды") back several fields across several entity types.
+  CUSTOM_ENTITY
 }
 
 model CustomFieldDefinition {
@@ -1260,6 +1884,12 @@ model CustomFieldDefinition {
   options    String[]              @default([])
   position   Int                   @default(0)
   createdAt  DateTime              @default(now())
+
+  // Set only when type = CUSTOM_ENTITY. Restrict (not SetNull/Cascade): a
+  // dictionary in active use by a field can't be deleted out from under it —
+  // the admin must repoint or delete the field first.
+  customEntityTypeId String?
+  customEntityType   CustomEntityType? @relation(fields: [customEntityTypeId], references: [id], onDelete: Restrict)
 
   values CustomFieldValue[]
 
@@ -1344,30 +1974,150 @@ model Webhook {
 }
 
 model WebhookDelivery {
-  id         String       @id @default(cuid())
-  webhookId  String
-  webhook    Webhook      @relation(fields: [webhookId], references: [id], onDelete: Cascade)
-  event      WebhookEvent
+  id           String       @id @default(cuid())
+  webhookId    String
+  webhook      Webhook      @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event        WebhookEvent
   // Block M3: the exact request body sent, so a retry can resend it without
   // the original in-memory dispatch data. Nullable — pre-M3 rows never had
   // one, and `db push` can't add a required column to a non-empty table.
-  payload    Json?
-  statusCode Int?
-  success    Boolean
-  error      String?
+  payload      Json?
+  statusCode   Int?
+  success      Boolean
+  error        String?
   // Block M3: retry queue. attemptCount starts at 1 (the initial dispatch
   // counts as attempt 1); nextRetryAt is set after a failed attempt that
   // hasn't hit MAX_ATTEMPTS yet (see lib/webhooks.ts). null means no retry
   // is pending — delivered, exhausted retries, its webhook was deactivated,
   // or (pre-M3 rows) this field was never set — consistent with M1/M2's
   // "no retroactive backfill" pattern, such rows are simply never picked up.
-  attemptCount Int        @default(1)
+  attemptCount Int          @default(1)
   nextRetryAt  DateTime?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
   @@index([webhookId, createdAt])
   @@index([nextRetryAt])
+}
+
+// --- Block K (part 2): automation scenarios (event -> condition -> action) -
+// v1 scope, deliberately narrow (see ROADMAP.md Block K): only the 5
+// document types already instrumented with webhooks (M3) can trigger a
+// rule, only Created/StatusChanged events, only a flat AND condition list
+// (no AND/OR tree), only 3 action types, no delay (immediate only — no
+// background-job infra exists, same blocker already deferred for M3/Block
+// J's cron-polled pattern).
+enum ScenarioDocumentType {
+  ORDER
+  PURCHASE_ORDER
+  INVOICE_OUT
+  INVOICE_IN
+  PRODUCTION_ORDER
+}
+
+enum ScenarioEventType {
+  CREATED
+  STATUS_CHANGED
+}
+
+// Not every field applies to every ScenarioDocumentType (e.g.
+// ASSIGNED_EMPLOYEE doesn't exist on InvoiceOut/InvoiceIn) — the evaluator
+// treats an inapplicable field as "condition not met", not an error; see
+// lib/scenarios.ts::DocumentSnapshot.
+enum ScenarioConditionField {
+  STATUS
+  COUNTERPARTY
+  ASSIGNED_EMPLOYEE
+  TOTAL
+  QUANTITY
+}
+
+enum ScenarioConditionOperator {
+  EQUALS
+  NOT_EQUALS
+  GREATER_THAN
+  GREATER_OR_EQUAL
+  LESS_THAN
+  LESS_OR_EQUAL
+}
+
+enum ScenarioActionType {
+  CREATE_RELATED_DOCUMENT
+  CREATE_NOTIFICATION
+  SEND_WEBHOOK
+}
+
+model ScenarioRule {
+  id           String               @id @default(cuid())
+  orgId        String
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name         String
+  documentType ScenarioDocumentType
+  eventType    ScenarioEventType
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+
+  conditions ScenarioCondition[]
+  actions    ScenarioAction[]
+
+  @@index([orgId, documentType, eventType, isActive])
+}
+
+model ScenarioCondition {
+  id        String                    @id @default(cuid())
+  ruleId    String
+  rule      ScenarioRule              @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  field     ScenarioConditionField
+  operator  ScenarioConditionOperator
+  // Raw comparison value as a string (an id for STATUS/COUNTERPARTY/
+  // ASSIGNED_EMPLOYEE, a decimal string for TOTAL/QUANTITY) — typing and
+  // parsing happen in lib/scenarios.ts::evaluateConditions, not here.
+  value     String
+  sortOrder Int                       @default(0)
+
+  @@index([ruleId])
+}
+
+model ScenarioAction {
+  id        String             @id @default(cuid())
+  ruleId    String
+  rule      ScenarioRule       @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  type      ScenarioActionType
+  sortOrder Int                @default(0)
+  // Shape depends on `type` (see lib/scenario-actions.ts):
+  //   CREATE_RELATED_DOCUMENT: { targetType: ScenarioDocumentType }
+  //   CREATE_NOTIFICATION: { allowedRoles, allowedCustomRoleIds,
+  //                           allowedEmployeeIds, title, body }
+  //   SEND_WEBHOOK: { webhookId }
+  // Not FK-constrained, same tradeoff as DocumentStatusTransition's
+  // allowedEmployeeIds above — a stale id (deleted webhook/employee/role)
+  // just stops matching/resolving, doesn't corrupt the row.
+  config    Json
+  createdAt DateTime           @default(now())
+
+  @@index([ruleId])
+}
+
+// A concrete, already-happened fact — who actually got notified — not a
+// dynamic access rule like DocumentStatusTransition's allowedRoles/etc.
+// userId is resolved once at creation time (lib/scenario-actions.ts::
+// executeCreateNotification) precisely so a later role change doesn't
+// retroactively move who "received" a past notification.
+model Notification {
+  id           String               @id @default(cuid())
+  orgId        String
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title        String
+  body         String
+  documentType ScenarioDocumentType
+  documentId   String
+  readAt       DateTime?
+  createdAt    DateTime             @default(now())
+
+  @@index([orgId, userId, readAt])
+  @@index([orgId, userId, createdAt])
 }
 
 // --- Block I/I2.1: flexible permissions ------------------------------------
@@ -1387,11 +2137,11 @@ model WebhookDelivery {
 // carries a `version` discriminator; rows written before Block I2.1 lack it
 // and are transparently upgraded on read by parseCustomRolePermissions().
 model CustomRole {
-  id          String   @id @default(cuid())
-  orgId       String
-  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  name        String
-  permissions Json
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name         String
+  permissions  Json
   // Block I2.1 (МойСклад "индивидуальные настройки"): true for a hidden,
   // single-membership role auto-created by the "individual settings" toggle
   // on an employee's Access card, as opposed to a named, reusable role an
@@ -1399,10 +2149,660 @@ model CustomRole {
   // key ("__individual__<employeeId>"), never shown directly — excluded from
   // CustomRolesManager's list and from every other employee's
   // customRoleOptions dropdown.
-  isIndividual Boolean @default(false)
-  createdAt   DateTime @default(now())
+  isIndividual Boolean      @default(false)
+  createdAt    DateTime     @default(now())
 
   memberships Membership[]
 
   @@unique([orgId, name])
+}
+
+// Block O — public REST API (/api/v1/entity/...), org-scoped Bearer-token
+// auth. The key itself is never stored — only its sha256 hash (keyHash),
+// same "generate once, show once, verify by re-hashing" pattern as a GitHub
+// PAT. keyPrefix (first ~8 chars of the plaintext key) is stored purely so
+// the settings UI can show "ewk_a1b2c3d4..." to help identify a key without
+// ever being able to reconstruct or re-display the real value. A key grants
+// full org-wide access (equivalent to ADMIN) — per-resource API key scoping
+// is a deliberately separate future feature, not this one.
+model ApiKey {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name        String
+  keyHash     String       @unique
+  keyPrefix   String
+  createdById String?
+  createdBy   Employee?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId])
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum AuditSource {
+  UI
+  API
+}
+
+// Block O phase 3 — audit log: who changed what, when, from where. Written
+// transparently by a Prisma Client Extension (lib/audit-log.ts) that wraps
+// create/update/delete on a fixed whitelist of "real business document"
+// models (see AUDITED_MODELS in that file) — callers never construct this
+// row themselves. `orgId` comes from the acting request's own context (see
+// lib/audit-context.ts), not from the mutated row, so it's correct even for
+// models that don't carry orgId directly. `diff` is `{field: {from, to}}`
+// for UPDATE, a full snapshot for CREATE/DELETE (there's no "before" to diff
+// against on create, no "after" on delete). `actorUserId`/`actorLabel` are
+// both nullable/denormalized: an API-key-driven change has no user at all,
+// and a label survives the actor being deleted or the key being revoked
+// later — this row must stay meaningful on its own, forever.
+model AuditLog {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  entityType  String
+  entityId    String
+  action      AuditAction
+  source      AuditSource
+  actorUserId String?
+  actorLabel  String
+  diff        Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId, entityType, entityId])
+  @@index([orgId, createdAt])
+}
+
+// Block O phase 4 — named price lists (МойСклад's `pricetype`). A
+// deliberate, standalone dictionary: creating/managing price types and
+// per-item values here does NOT change what Order/RetailSale/Invoice
+// actually charge — those still snapshot CatalogItem.unitPrice exactly as
+// before this phase. Wiring "this sales channel/client uses that price
+// type" into checkout is a separate, riskier change to proven pricing
+// logic, not done here — see ROADMAP.md Block O phase 4 for the explicit
+// scope note. Still useful standalone (e.g. exporting a wholesale price
+// list to an external system via the API).
+model PriceType {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  isDefault Boolean      @default(false)
+  createdAt DateTime     @default(now())
+
+  prices CatalogItemPrice[]
+
+  @@unique([orgId, name])
+}
+
+model CatalogItemPrice {
+  id            String      @id @default(cuid())
+  catalogItemId String
+  catalogItem   CatalogItem @relation(fields: [catalogItemId], references: [id], onDelete: Cascade)
+  priceTypeId   String
+  priceType     PriceType   @relation(fields: [priceTypeId], references: [id], onDelete: Cascade)
+  value         Decimal     @db.Decimal(12, 2)
+  currency      String      @default("RUB")
+
+  @@unique([catalogItemId, priceTypeId])
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum DiscountTarget {
+  ALL
+  CATALOG_GROUP
+  CATALOG_ITEM
+  CLIENT
+}
+
+// Block O phase 4 — one simplified model standing in for МойСклад's three
+// separate discount subtypes (accumulation/personal/specialprice), which
+// differ mainly in TRIGGER (auto-escalating by purchase volume / manually
+// assigned to one client / time-boxed promotion), not in the underlying
+// calculation. `target`+`targetId` picks what it applies to, `startDate`/
+// `endDate` (both optional) cover the "specialprice" time-boxed case;
+// `target: CLIENT` with no dates reads as a "personal" discount. True
+// automatic tiered accumulation (spend more → escalating % without a human
+// setting it) is NOT implemented — these are flat, manually-defined rules.
+// Same scope note as PriceType above: defined/manageable here, but NOT
+// automatically applied when computing an Order/RetailSale/Invoice line's
+// price — that wiring is separate, deliberately not done in this phase.
+model Discount {
+  id        String         @id @default(cuid())
+  orgId     String
+  org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  type      DiscountType
+  value     Decimal        @db.Decimal(7, 2)
+  target    DiscountTarget @default(ALL)
+  // CatalogGroup.id / CatalogItem.id / Client.id depending on `target`;
+  // null when target is ALL. Not a real FK (three possible referents) —
+  // same "polymorphic id, validated in the action, not the schema"
+  // convention already used elsewhere in this project.
+  targetId  String?
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+
+  @@index([orgId])
+}
+
+// --- Block O phase 5: CustomEntity, Task, EventFeed (comments), ExpenseItem
+
+// A reusable user-defined dictionary (МойСклад's customentity) — unlike
+// CustomFieldDefinition.options (a one-off string list scoped to a single
+// field), one CustomEntityType is defined once and can back a CUSTOM_ENTITY
+// field on several entity types at once.
+model CustomEntityType {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime     @default(now())
+
+  values                 CustomEntityValue[]
+  customFieldDefinitions CustomFieldDefinition[]
+
+  @@unique([orgId, name])
+}
+
+model CustomEntityValue {
+  id                 String           @id @default(cuid())
+  customEntityTypeId String
+  customEntityType   CustomEntityType @relation(fields: [customEntityTypeId], references: [id], onDelete: Cascade)
+  name               String
+  position           Int              @default(0)
+  createdAt          DateTime         @default(now())
+
+  @@unique([customEntityTypeId, name])
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+}
+
+// МойСклад's task (CRM "Задачи" folder) — a manual to-do assigned to an
+// employee, optionally linked to any document. `linkedEntityType`/
+// `linkedEntityId` follow the same free-form-string polymorphic convention
+// as AuditLog.entityType — not a real FK, no referential integrity if the
+// linked document is later hard-deleted (same accepted tradeoff as
+// CustomFieldValue.entityId).
+model Task {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?
+  dueDate            DateTime?
+  status             TaskStatus   @default(OPEN)
+  // Named to match Order/PurchaseOrder/ProductionOrder/Client's own
+  // assignedEmployeeId — buildScopeWhere() (lib/scope.ts) hardcodes that
+  // field name for OWN-scope filtering, so this field reuses it verbatim
+  // rather than inventing a second name for the same concept.
+  assignedEmployeeId String?
+  assignedEmployee   Employee?    @relation("TaskAssignee", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  createdById        String
+  createdBy          Employee     @relation("TaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  linkedEntityType   String?
+  linkedEntityId     String?
+  completedAt        DateTime?
+  createdAt          DateTime     @default(now())
+
+  @@index([orgId, status])
+  @@index([orgId, assignedEmployeeId])
+}
+
+// МойСклад's eventfeed — a comment thread on any document. Same
+// free-form-string polymorphic convention as Task's link above; visibility/
+// posting is gated by the SAME permission as the underlying document
+// (see ENTITY_TYPE_TO_RESOURCE in actions/comments.ts), not a separate
+// "eventFeed" resource of its own.
+model Comment {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  entityType String
+  entityId   String
+  authorId   String
+  author     Employee     @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  text       String
+  createdAt  DateTime     @default(now())
+
+  @@index([orgId, entityType, entityId])
+}
+
+// МойСклад's expenseitem — expense category dictionary. Block O phase 5
+// ships the dictionary only; wiring it to an actual categorized expense
+// transaction (needed for a real P&L breakdown by category) is deliberately
+// deferred to phase 6, where CashOut (a manual, non-COGS money-out
+// transaction) is introduced — categorizing a CashOut is the natural first
+// real use of this dictionary, not invented here ahead of that need.
+model ExpenseItem {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime     @default(now())
+
+  cashOrders CashOrder[]
+
+  @@unique([orgId, name])
+}
+
+// --- Block O phase 6: CashIn/CashOut, CounterpartyAdjustment, PriceList ----
+
+enum CashDirection {
+  IN
+  OUT
+}
+
+// МойСклад's cashin/cashout — a cash-ledger entry NOT tied to a retail
+// shift (unlike CashTransaction, Block E, whose shiftId is required).
+// Covers cash flows the register never sees: a founder's contribution, a
+// cash business expense, etc. Unlike Payment (counterpartyId required),
+// counterpartyId here is optional — that's exactly the gap this closes,
+// many such entries have no counterparty at all.
+model CashOrder {
+  id             String        @id @default(cuid())
+  orgId          String
+  org            Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  direction      CashDirection
+  amount         Decimal       @db.Decimal(12, 2)
+  currency       String        @default("RUB")
+  counterpartyId String?
+  counterparty   Client?       @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  // Only meaningful for OUT — categorizes the expense. First real use of
+  // ExpenseItem (Block O phase 5 shipped it as a dictionary only).
+  expenseItemId  String?
+  expenseItem    ExpenseItem?  @relation(fields: [expenseItemId], references: [id], onDelete: SetNull)
+  // Блок K remainder — "Создать документ" → "Приходный ордер" on an Order.
+  // Optional, same provenance-link pattern as Payment.orderId — a CashOrder
+  // still works standalone (founder's contribution, cash expense) exactly
+  // as before, this just adds the case where it's a cash receipt against a
+  // specific customer order.
+  orderId        String?
+  order          Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  comment        String?
+  createdById    String
+  createdBy      Employee      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt      DateTime      @default(now())
+
+  @@index([orgId, direction])
+}
+
+enum AdjustmentSide {
+  RECEIVABLE
+  PAYABLE
+}
+
+// МойСклад's counterpartyadjustment — a manual correction to a client's
+// running balance (lib/balances.ts::getClientBalance is entirely derived
+// from Order/PurchaseOrder/Payment — no way to hand-adjust it otherwise:
+// debt forgiveness, migrating an opening balance from another system).
+// `amount` REDUCES the chosen side's total (positive = client owes less /
+// we owe them less); `side` picks which of the two independent balances
+// (a Client can be both customer and supplier) this adjustment applies to.
+model CounterpartyAdjustment {
+  id          String         @id @default(cuid())
+  orgId       String
+  org         Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  clientId    String
+  client      Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  side        AdjustmentSide
+  amount      Decimal        @db.Decimal(12, 2)
+  comment     String?
+  createdById String
+  createdBy   Employee       @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime       @default(now())
+
+  @@index([orgId, clientId])
+}
+
+// --- Block O phase 8: product images + document attachments ---------------
+
+// МойСклад's product/{id}/images AND its generic document attachments,
+// unified into one model — same polymorphic entityType/entityId string
+// convention already used by AuditLog/Task/Comment in this project, rather
+// than two near-identical tables. `entityType: "CatalogItem"` + ordering by
+// `position` doubles as the product image gallery (position 0 = primary/
+// thumbnail); any other entityType is a plain document attachment (a
+// receipt scan, a signed contract PDF, etc), where `position` is unused.
+// No hard FK to the target row (can't be, it's polymorphic) — an orphaned
+// row (and its file) after a hard delete is cleaned up the same way
+// CustomFieldValue's own orphans are, see lib/archive.ts.
+model Attachment {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  entityType  String
+  entityId    String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  // Path relative to the private storage root (lib/file-storage.ts) — never
+  // under `public/`, so a file is only reachable through the authenticated
+  // /api/files/[id] route, not by guessing a URL.
+  storagePath String
+  position    Int          @default(0)
+  createdById String
+  createdBy   Employee     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdAt   DateTime     @default(now())
+
+  @@index([orgId, entityType, entityId])
+}
+
+// --- Block O phase 9: async export via the public API -----------------
+
+enum ExportJobStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+// МойСклад's `?async=true` export pattern, adapted to this project's
+// no-separate-worker convention (same idea as fiscalReceipt/registerFiscalReceipt
+// in Block E/M3 — a PENDING row, processed immediately in a fire-and-forget
+// background task, polled by href until DONE). `result` holds the exported
+// rows inline as JSON rather than a downloadable file — this project's scale
+// doesn't need true streamed exports, and avoids adding a second file-serving
+// path alongside Attachment's (Block O phase 8) for what would usually be a
+// small-to-moderate JSON payload.
+model ExportJob {
+  id          String          @id @default(cuid())
+  orgId       String
+  org         Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  entityType  String
+  // The original filter/search/order query string this job was requested
+  // with — kept for reference/debugging, not re-parsed.
+  query       String?
+  status      ExportJobStatus @default(PENDING)
+  result      Json?
+  error       String?
+  createdAt   DateTime        @default(now())
+  completedAt DateTime?
+
+  @@index([orgId, createdAt])
+}
+
+// Block K remainder, phase 7 — "Создать документ" → "Волна отбора". A
+// deliberately light grouping record ("these N orders were picked
+// together"), not a document with its own lifecycle/status — the real
+// "picked or not" state already lives in the existing DEMAND draft/posted
+// mechanism (createDraftDemand/postDraftDemand). A wave just adds the
+// aggregated cross-order pick list and a one-click bulk-create of drafts,
+// on top of that existing mechanism.
+model PickingWave {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number      Int
+  createdById String?
+  createdBy   Employee?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime     @default(now())
+
+  orders PickingWaveOrder[]
+
+  @@unique([orgId, number])
+}
+
+model PickingWaveOrder {
+  id      String      @id @default(cuid())
+  waveId  String
+  wave    PickingWave @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  orderId String
+  order   Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([waveId, orderId])
+}
+
+// Блок L — платформенные админы (панель разработчика). Полностью отдельно
+// от User/Membership (см. lib/admin-auth.ts's own comment for the full
+// reasoning) — у платформенного админа нет организации, и его сессия
+// не должна пересекаться с сессией ни одной организации ни при каких
+// обстоятельствах (отдельная cookie, отдельный NextAuth-инстанс).
+model PlatformAdmin {
+  id                  String          @id @default(cuid())
+  email               String          @unique
+  // Nullable — a newly-invited (non-owner) admin has neither a password
+  // nor a TOTP secret until they complete self-service setup via
+  // setupToken below. The owner is the one exception: created directly by
+  // scripts/create-platform-owner.ts, both already set before the row
+  // exists at all.
+  passwordHash        String?
+  name                String
+  // true только у единственного головного аккаунта — всегда полный
+  // доступ, проверяется в коде напрямую (lib/platform-auth.ts), не через
+  // platformRoleId, чтобы владельца нельзя было случайно разжаловать
+  // правкой/удалением роли.
+  isOwner             Boolean         @default(false)
+  platformRoleId      String?
+  platformRole        PlatformRole?   @relation(fields: [platformRoleId], references: [id], onDelete: SetNull)
+  // TOTP обязателен для входа (см. lib/admin-auth.ts::authorize) — секрет
+  // шифруется мастер-ключом приложения (lib/crypto.ts::encryptWithMasterKey),
+  // не органо-скоупенным DEK (платформенный секрет не принадлежит ни
+  // одной организации). Аккаунт без totpSecretEnc не может залогиниться.
+  totpSecretEnc       Bytes?
+  totpSecretNonce     Bytes?
+  totpEnabledAt       DateTime?
+  // Блок L фаза 2 — one-time self-service setup link for a newly-invited
+  // (non-owner) admin: they pick their own password and configure their
+  // own TOTP secret themselves, so the admin who created the invite never
+  // sees or knows either — 2FA set up by anyone but the account's own
+  // owner defeats the point of it. Cleared (set to null) once consumed.
+  setupToken          String?         @unique
+  setupTokenExpiresAt DateTime?
+  status              EntityStatus    @default(ACTIVE)
+  lastLoginAt         DateTime?
+  createdAt           DateTime        @default(now())
+  createdById         String?
+  createdBy           PlatformAdmin?  @relation("PlatformAdminCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAdmins       PlatformAdmin[] @relation("PlatformAdminCreatedBy")
+
+  auditLogs              PlatformAuditLog[]
+  subscriptionChangeLogs SubscriptionChangeLog[]
+  balanceTransactions    BalanceTransaction[]
+}
+
+// Гибкие роли платформенных админов — тот же паттерн JSON-блоба, что уже
+// CustomRole.permissions использует для органо-ролей (Блок I), только
+// набор capability-флагов свой, платформенный (lib/platform-auth.ts),
+// без scope-уровней (OWN/ALL) — на уровне платформы нет понятия "владелец
+// строки", только "может/не может" на весь ресурс сразу.
+model PlatformRole {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions Json
+  createdAt   DateTime @default(now())
+
+  admins PlatformAdmin[]
+}
+
+// Append-only журнал действий панели разработчика — отдельная сущность от
+// AuditLog (Блок O фаза 3, органо-скоупенный, актор — Employee), т.к.
+// платформенные действия затрагивают чужие организации и требуют более
+// высокой чувствительности хранения/доступа (виден только платформенным
+// админам с viewAuditLog, никогда — самой организации).
+model PlatformAuditLog {
+  id              String         @id @default(cuid())
+  platformAdminId String?
+  platformAdmin   PlatformAdmin? @relation(fields: [platformAdminId], references: [id], onDelete: SetNull)
+  action          String
+  targetOrgId     String?
+  before          Json?
+  after           Json?
+  ip              String?
+  createdAt       DateTime       @default(now())
+
+  @@index([platformAdminId, createdAt])
+  @@index([targetOrgId])
+}
+
+// Блок L фаза 3 — subscription tariffs/limits, МойСклад-style. Billing
+// (actual payment collection) is deliberately out of scope here — no
+// provider is chosen yet (see ROADMAP.md Block L) — this models the
+// tariff/limit/feature side and manual grant/change/revoke from the panel;
+// a payment provider plugs in later as a swappable adapter (same pattern
+// already used for lib/fiscal/atol-provider.ts), not a redesign of this.
+model SubscriptionPlan {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  // null means "not tracked/unlimited" for that axis — not "zero allowed"
+  // (same convention as CatalogItem.minStock, Block O phase 7).
+  maxEmployees      Int?
+  maxOrdersPerMonth Int?
+  // Record<string, boolean> — which optional product features this plan
+  // unlocks (checked ad hoc where relevant, same "not a resource, a
+  // feature flag" idea as CustomRolePermissionsV2's own model but with no
+  // concept of scope — a feature is simply on or off for the org).
+  features          Json
+  priceMonthly      Decimal  @db.Decimal(10, 2)
+  currency          String   @default("RUB")
+  createdAt         DateTime @default(now())
+  // Блок Q — true for a private, single-org plan materialized by the
+  // "Свой тариф" constructor (lib/billing/subscription-billing.ts). Hidden
+  // from the shared /admin/plans catalog (filtered out there) and from the
+  // org-facing fixed-plan picker — everything else (limit checks, the
+  // org's subscription page, the platform admin's organization page) reads
+  // Organization.subscriptionPlan exactly the same way regardless of this
+  // flag, by design (no new branching at any existing read site).
+  isCustom          Boolean  @default(false)
+
+  organizations    Organization[]
+  changeLogsBefore SubscriptionChangeLog[] @relation("SubscriptionChangeLogBeforePlan")
+  changeLogsAfter  SubscriptionChangeLog[] @relation("SubscriptionChangeLogAfterPlan")
+  invoices         SubscriptionInvoice[]
+}
+
+// Блок Q — the "Свой тариф" constructor's building blocks, platform-admin
+// managed the same way SubscriptionPlan is (CRUD, ACTIVE/ARCHIVED so a
+// retired item never invalidates historical invoices' planSnapshot).
+enum SubscriptionFeatureKind {
+  FEATURE
+  EXTRA_EMPLOYEE_SEAT
+}
+
+model SubscriptionFeatureCatalogItem {
+  id          String                  @id @default(cuid())
+  key         String                  @unique
+  label       String
+  description String?
+  kind        SubscriptionFeatureKind
+  unitPrice   Decimal                 @db.Decimal(10, 2)
+  status      EntityStatus            @default(ACTIVE)
+  // Block S — true means this feature is free for every organization
+  // regardless of plan (never offered for purchase in the constructor or
+  // the add-on list, always counted as enabled — see
+  // lib/subscription.ts::resolveEnabledFeatures). Distinct from a plan's
+  // own `features` map: this is catalog-wide, not per-plan.
+  includedInAllPlans Boolean          @default(false)
+  createdAt   DateTime                @default(now())
+}
+
+enum BalanceTransactionType {
+  TOPUP
+  INVOICE_PAYMENT
+  REFUND
+  ADJUSTMENT
+}
+
+// Append-only ledger — same principle as SubscriptionChangeLog/
+// PlatformAuditLog. `amount` is signed (+ credit, - debit); `balanceAfter`
+// is a snapshot taken at write time for reconciliation, never recomputed.
+model BalanceTransaction {
+  id               String                 @id @default(cuid())
+  orgId            String
+  org              Organization           @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  type             BalanceTransactionType
+  amount           Decimal                @db.Decimal(12, 2)
+  balanceAfter     Decimal                @db.Decimal(12, 2)
+  relatedInvoiceId String?
+  relatedInvoice   SubscriptionInvoice?   @relation(fields: [relatedInvoiceId], references: [id], onDelete: SetNull)
+  // Who manually credited this (Блок Q interim, until a real payment
+  // provider's webhook calls creditBalance instead) — null for automated
+  // debits (invoice payments) and future provider-originated credits.
+  platformAdminId  String?
+  platformAdmin    PlatformAdmin?         @relation(fields: [platformAdminId], references: [id], onDelete: SetNull)
+  note             String?
+  createdAt        DateTime               @default(now())
+
+  @@index([orgId, createdAt])
+}
+
+enum SubscriptionInvoiceStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
+// Блок Q — a billing document distinct from InvoiceOut/InvoiceIn (which are
+// the organization's own business documents with ITS customers/suppliers):
+// this is what the ORGANIZATION owes THIS platform for its subscription.
+// `planSnapshot` freezes name/limits/features/price at creation time so
+// editing a SubscriptionPlan later never rewrites the amount on a
+// historical invoice.
+model SubscriptionInvoice {
+  id           String                    @id @default(cuid())
+  orgId        String
+  org          Organization              @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  number       Int
+  planId       String
+  plan         SubscriptionPlan          @relation(fields: [planId], references: [id])
+  planSnapshot Json
+  amount       Decimal                   @db.Decimal(12, 2)
+  currency     String
+  periodMonths Int                       @default(1)
+  // Block S — true for an "ADD_ON" selection (buying one feature on top of
+  // an already-active plan): settling this invoice must NOT extend
+  // subscriptionExpiresAt by periodMonths like a real purchase/renewal
+  // would — the org already paid for its current period, this only widens
+  // what that period includes. Persisted on the invoice itself (not passed
+  // as a one-off call argument) so a LATER retry — a balance top-up via
+  // creditBalance(), for instance — still applies the same rule.
+  isAddOn      Boolean                   @default(false)
+  status       SubscriptionInvoiceStatus @default(PENDING)
+  createdAt    DateTime                  @default(now())
+  paidAt       DateTime?
+  cancelledAt  DateTime?
+
+  balanceTransactions BalanceTransaction[]
+
+  @@unique([orgId, number])
+  @@index([orgId, createdAt])
+}
+
+// Append-only — visible to platform admins (viewAuditLog capability isn't
+// required for this specifically, manageSubscriptions covers it) AND to
+// the organization itself (its own settings page, read-only) — see
+// SubscriptionPlan's own comment: ROADMAP.md explicitly called for
+// transparency of tariff history to the client, not just internal audit.
+model SubscriptionChangeLog {
+  id              String            @id @default(cuid())
+  orgId           String
+  org             Organization      @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  platformAdminId String?
+  platformAdmin   PlatformAdmin?    @relation(fields: [platformAdminId], references: [id], onDelete: SetNull)
+  action          String // "GRANTED" | "CHANGED" | "REVOKED" | "EXPIRED"
+  beforePlanId    String?
+  beforePlan      SubscriptionPlan? @relation("SubscriptionChangeLogBeforePlan", fields: [beforePlanId], references: [id], onDelete: SetNull)
+  afterPlanId     String?
+  afterPlan       SubscriptionPlan? @relation("SubscriptionChangeLogAfterPlan", fields: [afterPlanId], references: [id], onDelete: SetNull)
+  beforeExpiresAt DateTime?
+  afterExpiresAt  DateTime?
+  createdAt       DateTime          @default(now())
+
+  @@index([orgId, createdAt])
 }

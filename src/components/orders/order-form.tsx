@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition, type KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
 import { ClientCombobox } from "@/components/forms/client-combobox";
+import { ProjectCombobox } from "@/components/orders/project-combobox";
 import { CustomFieldsEditor } from "@/components/settings/custom-fields-editor";
 import { upsertOrder } from "@/actions/orders";
 import type { CustomFieldDef } from "@/lib/custom-fields";
@@ -17,6 +19,7 @@ interface VariantOption {
   id: string;
   label: string;
   price: string | null;
+  barcode: string | null;
 }
 
 interface CatalogOption {
@@ -24,6 +27,7 @@ interface CatalogOption {
   name: string;
   unitPrice: string;
   currency: string;
+  barcode: string | null;
   variants: VariantOption[];
 }
 
@@ -43,6 +47,8 @@ interface OrderFormProps {
   contractOptions: ComboboxOption[];
   salesChannelOptions: ComboboxOption[];
   legalEntityOptions: ComboboxOption[];
+  storeOptions: ComboboxOption[];
+  projectOptions: ComboboxOption[];
   customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
     clientId: string | null;
@@ -50,6 +56,10 @@ interface OrderFormProps {
     contractId: string | null;
     salesChannelId: string | null;
     legalEntityId: string | null;
+    storeId: string | null;
+    projectId: string | null;
+    isPosted: boolean;
+    isReserved: boolean;
     lineItems: { catalogItemId: string; variantId: string | null; quantity: string }[];
     customFieldValues?: Record<string, string>;
   };
@@ -68,6 +78,8 @@ export function OrderForm({
   contractOptions,
   salesChannelOptions,
   legalEntityOptions,
+  storeOptions,
+  projectOptions,
   customFieldDefs = [],
   defaultValues,
 }: OrderFormProps) {
@@ -89,6 +101,10 @@ export function OrderForm({
   const [legalEntityId, setLegalEntityId] = useState<string | null>(
     defaultValues?.legalEntityId ?? null,
   );
+  const [storeId, setStoreId] = useState<string | null>(defaultValues?.storeId ?? null);
+  const [projectId, setProjectId] = useState<string | null>(defaultValues?.projectId ?? null);
+  const [isPosted, setIsPosted] = useState(defaultValues?.isPosted ?? false);
+  const [isReserved, setIsReserved] = useState(defaultValues?.isReserved ?? false);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(
     defaultValues?.customFieldValues ?? {},
   );
@@ -102,6 +118,18 @@ export function OrderForm({
         }))
       : [newRow()],
   );
+  const [barcodeQuery, setBarcodeQuery] = useState("");
+  const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  function handlePostedChange(checked: boolean) {
+    setIsPosted(checked);
+    if (!checked) setIsReserved(false);
+  }
+
+  function handleStoreChange(next: string | null) {
+    setStoreId(next);
+    if (!next) setIsReserved(false);
+  }
 
   const catalogItemComboOptions: ComboboxOption[] = catalogOptions.map((c) => ({
     value: c.id,
@@ -109,6 +137,43 @@ export function OrderForm({
   }));
 
   const catalogById = new Map(catalogOptions.map((c) => [c.id, c]));
+
+  // Barcode search on line items — same pattern as components/kassa/pos-screen.tsx:
+  // exact barcode match (item- or variant-level) OR case-insensitive name
+  // substring, both driven by one input; Enter with an exact match appends a
+  // new row for that item (variant still chosen via the row's own combobox,
+  // since order lines are structured rows, not a flat cart).
+  const trimmedQuery = barcodeQuery.trim();
+  const barcodeMatches = trimmedQuery
+    ? catalogOptions.filter(
+        (c) =>
+          c.barcode === trimmedQuery ||
+          c.variants.some((v) => v.barcode === trimmedQuery) ||
+          c.name.toLowerCase().includes(trimmedQuery.toLowerCase()),
+      )
+    : [];
+  const exactBarcodeMatch = catalogOptions.find(
+    (c) => c.barcode === trimmedQuery || c.variants.some((v) => v.barcode === trimmedQuery),
+  );
+
+  function addItemRow(catalogItemId: string) {
+    setRows((prev) => {
+      const blank = prev.find((r) => !r.catalogItemId);
+      if (blank) {
+        return prev.map((r) => (r.key === blank.key ? { ...r, catalogItemId, variantId: null } : r));
+      }
+      return [...prev, { ...newRow(), catalogItemId, variantId: null }];
+    });
+    setBarcodeQuery("");
+    barcodeInputRef.current?.focus();
+  }
+
+  function handleBarcodeKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && exactBarcodeMatch) {
+      e.preventDefault();
+      addItemRow(exactBarcodeMatch.id);
+    }
+  }
 
   function lineUnitPrice(row: LineItemRow, item: CatalogOption | undefined): number {
     if (!item) return 0;
@@ -166,6 +231,10 @@ export function OrderForm({
         contractId,
         salesChannelId,
         legalEntityId,
+        storeId,
+        projectId,
+        isPosted,
+        isReserved,
         lineItems,
         customFieldValues,
       });
@@ -241,9 +310,76 @@ export function OrderForm({
 
       <Card>
         <CardHeader>
+          <CardTitle>Склад и проект</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-2">
+            <Label>Склад</Label>
+            <EntityCombobox
+              options={storeOptions}
+              value={storeId}
+              onChange={handleStoreChange}
+              placeholder="Не выбран"
+              emptyMessage="Склады не найдены"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Проект</Label>
+            <ProjectCombobox
+              orgSlug={orgSlug}
+              options={projectOptions}
+              clientOptions={clientOptions}
+              value={projectId}
+              onChange={setProjectId}
+            />
+          </div>
+          <div className="flex items-center gap-2 sm:col-span-2">
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox checked={isPosted} onCheckedChange={(checked) => handlePostedChange(checked === true)} />
+              Проведено
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={isReserved}
+                onCheckedChange={(checked) => setIsReserved(checked === true)}
+                disabled={!isPosted || !storeId}
+              />
+              Резерв
+            </label>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Позиции</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2">
+            <Label>Поиск по штрихкоду или названию</Label>
+            <Input
+              ref={barcodeInputRef}
+              value={barcodeQuery}
+              onChange={(e) => setBarcodeQuery(e.target.value)}
+              onKeyDown={handleBarcodeKeyDown}
+              placeholder="Штрихкод или название..."
+            />
+            {barcodeQuery.trim() && barcodeMatches.length > 0 && (
+              <div className="flex flex-col gap-1 rounded-md border p-1">
+                {barcodeMatches.slice(0, 10).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="flex items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent"
+                    onClick={() => addItemRow(c.id)}
+                  >
+                    <span>{c.name}</span>
+                    <span className="text-muted-foreground">{formatMoney(Number(c.unitPrice), c.currency)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {rows.map((row) => {
             const item = row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined;
             const unitPrice = lineUnitPrice(row, item);

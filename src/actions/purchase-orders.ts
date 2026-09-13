@@ -1,17 +1,21 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { assertRowScope, resolveGroupMemberIds } from "@/lib/scope";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
-import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
+import { getOrderRemainingByKey } from "@/lib/orders";
+import { getItemBalanceAtStore } from "@/lib/stock";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
+  variantId: z.string().min(1).nullable().optional(),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unitCost: z.coerce.number().min(0, "Цена не может быть отрицательной"),
 });
@@ -29,7 +33,7 @@ export interface UpsertPurchaseOrderInput {
   assignedEmployeeId: string | null;
   contractId?: string | null;
   legalEntityId?: string | null;
-  lineItems: { catalogItemId: string; quantity: number; unitCost: number }[];
+  lineItems: { catalogItemId: string; variantId?: string | null; quantity: number; unitCost: number }[];
   customFieldValues?: Record<string, string>;
 }
 
@@ -86,6 +90,22 @@ export async function upsertPurchaseOrder(
   }
   const currencyById = new Map(catalogItems.map((c) => [c.id, c.currency]));
 
+  const variantIds = [
+    ...new Set(parsed.data.lineItems.map((li) => li.variantId).filter((v): v is string => !!v)),
+  ];
+  const variants = variantIds.length
+    ? await prisma.catalogItemVariant.findMany({ where: { id: { in: variantIds } } })
+    : [];
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+  for (const li of parsed.data.lineItems) {
+    if (li.variantId) {
+      const variant = variantById.get(li.variantId);
+      if (!variant || variant.catalogItemId !== li.catalogItemId) {
+        return { error: "Модификация не найдена" };
+      }
+    }
+  }
+
   if (parsed.data.contractId) {
     const contract = await prisma.contract.findFirst({
       where: { id: parsed.data.contractId, orgId: ctx.orgId },
@@ -105,6 +125,7 @@ export async function upsertPurchaseOrder(
 
   const lineItemsCreateData = parsed.data.lineItems.map((li) => ({
     catalogItemId: li.catalogItemId,
+    variantId: li.variantId ?? undefined,
     quantity: li.quantity,
     unitPriceSnapshot: li.unitCost,
     currency: currencyById.get(li.catalogItemId)!,
@@ -156,9 +177,111 @@ export async function upsertPurchaseOrder(
   revalidatePath(`/${orgSlug}/purchase-orders`);
   revalidatePath(`/${orgSlug}/purchase-orders/${purchaseOrderIdResult}`);
   if (isNewPurchaseOrder) {
-    dispatchWebhookEvent(ctx.orgId, "PURCHASE_ORDER_CREATED", { purchaseOrderId: purchaseOrderIdResult });
+    await notifyDocumentEvent(
+      ctx.orgId, "PURCHASE_ORDER_CREATED", { purchaseOrderId: purchaseOrderIdResult }, "PURCHASE_ORDER", "CREATED", purchaseOrderIdResult,
+    );
   }
   return { purchaseOrderId: purchaseOrderIdResult };
+}
+
+export interface CreateDraftPurchaseOrderFromOrderResult {
+  error?: string;
+}
+
+/**
+ * "Создать документ" → "Заказ поставщику" / "Заказ поставщику (с учётом
+ * доступного)" / "Снабжение" — Block K remainder. МойСклад has these as
+ * three separate menu items; here they're one action with a boolean mode,
+ * a deliberate simplification (flagged in ROADMAP.md, not silent) — all
+ * three produce the exact same document (a draft PurchaseOrder pre-filled
+ * from the order's remaining lines), the only real difference between them
+ * is whether on-hand stock is subtracted first, and "Снабжение" has no
+ * distinct data shape of its own in this codebase to justify a third path.
+ *
+ * `supplierId` is left null (nullable on the model) — picked afterwards on
+ * the draft's own edit page (`PurchaseOrderForm`), same "create bare
+ * skeleton, finish on its own page" idiom as `createDraftDemand`. `unitCost`
+ * has no natural default (CatalogItem only tracks a sale `unitPrice`, no
+ * purchase cost) — starts at 0, must be filled in before the PO is actually
+ * useful, same as picking the supplier.
+ */
+export async function createDraftPurchaseOrderFromOrder(
+  orgSlug: string,
+  orderId: string,
+  onlyShortfall: boolean,
+): Promise<CreateDraftPurchaseOrderFromOrderResult> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "purchaseOrders", "create");
+
+  const order = await prisma.order.findFirst({ where: { id: orderId, orgId: ctx.orgId } });
+  if (!order) {
+    return { error: "Заказ не найден" };
+  }
+
+  const remainingByKey = await getOrderRemainingByKey(prisma, orderId);
+  let remainingLines = [...remainingByKey.values()].filter((l) => l.quantity > 0);
+
+  if (onlyShortfall) {
+    if (!ctx.defaultStoreId) {
+      return { error: "Обратитесь к администратору: не назначена точка продаж по умолчанию" };
+    }
+    const withShortfall: typeof remainingLines = [];
+    for (const line of remainingLines) {
+      const balance = await getItemBalanceAtStore(ctx.orgId, ctx.defaultStoreId, line.catalogItemId, line.variantId);
+      const shortfall = line.quantity - Math.max(0, balance);
+      if (shortfall > 0) {
+        withShortfall.push({ ...line, quantity: shortfall });
+      }
+    }
+    remainingLines = withShortfall;
+  }
+
+  if (remainingLines.length === 0) {
+    return {
+      error: onlyShortfall
+        ? "Всё уже есть в наличии — закупать нечего"
+        : "Нечего закупать — всё уже отгружено",
+    };
+  }
+
+  const orderLineItems = await prisma.orderLineItem.findMany({ where: { orderId } });
+  const orderLineByKey = new Map(
+    orderLineItems.map((li) => [`${li.catalogItemId}:${li.variantId ?? ""}`, li]),
+  );
+
+  const poEditScope = ctx.capabilities.purchaseOrders.edit;
+  const assignedEmployeeId = poEditScope === "OWN" ? ctx.employeeId : null;
+
+  const [number, statusId] = await Promise.all([
+    nextPurchaseOrderNumber(ctx.orgId),
+    getDefaultStatusId(ctx.orgId, "PURCHASE_ORDER"),
+  ]);
+  const purchaseOrder = await prisma.purchaseOrder.create({
+    data: {
+      orgId: ctx.orgId,
+      number,
+      statusId,
+      assignedEmployeeId,
+      lineItems: {
+        create: remainingLines.map((l) => {
+          const orderLine = orderLineByKey.get(`${l.catalogItemId}:${l.variantId ?? ""}`);
+          return {
+            catalogItemId: l.catalogItemId,
+            variantId: l.variantId,
+            quantity: l.quantity,
+            unitPriceSnapshot: 0,
+            currency: orderLine?.currency ?? "RUB",
+          };
+        }),
+      },
+    },
+  });
+
+  revalidatePath(`/${orgSlug}/purchase-orders`);
+  await notifyDocumentEvent(
+    ctx.orgId, "PURCHASE_ORDER_CREATED", { purchaseOrderId: purchaseOrder.id }, "PURCHASE_ORDER", "CREATED", purchaseOrder.id,
+  );
+  redirect(`/${orgSlug}/purchase-orders/${purchaseOrder.id}`);
 }
 
 export async function updatePurchaseOrderStatus(
@@ -200,7 +323,9 @@ export async function updatePurchaseOrderStatus(
     where: { id: purchaseOrderId, orgId: ctx.orgId },
     data: { statusId },
   });
-  dispatchWebhookEvent(ctx.orgId, "PURCHASE_ORDER_STATUS_CHANGED", { purchaseOrderId, statusId });
+  await notifyDocumentEvent(
+    ctx.orgId, "PURCHASE_ORDER_STATUS_CHANGED", { purchaseOrderId, statusId }, "PURCHASE_ORDER", "STATUS_CHANGED", purchaseOrderId,
+  );
 
   revalidatePath(`/${orgSlug}/purchase-orders`);
   revalidatePath(`/${orgSlug}/purchase-orders/${purchaseOrderId}`);

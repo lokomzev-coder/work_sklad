@@ -17,6 +17,7 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   stages: "Этапы",
   "tech-processes": "Техпроцессы",
   orders: "Заказы",
+  retail: "Розница",
   channels: "Каналы продаж",
   "purchase-orders": "Заказы поставщику",
   "invoices-out": "Счета покупателям",
@@ -39,4 +40,9 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   statuses: "Статусы",
   webhooks: "Вебхуки",
   new: "Новый",
+  tasks: "Задачи",
+  "custom-entities": "Справочники",
+  "expense-items": "Статьи расходов",
+  "cash-orders": "Кассовые ордера",
+  "price-list": "Прайс-лист",
 };

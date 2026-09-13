@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
-import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const lineItemSchema = z.object({
@@ -158,7 +158,9 @@ export async function upsertInvoiceOut(
   revalidatePath(`/${orgSlug}/invoices-out`);
   revalidatePath(`/${orgSlug}/invoices-out/${invoiceOutIdResult}`);
   if (isNew) {
-    dispatchWebhookEvent(ctx.orgId, "INVOICE_OUT_CREATED", { invoiceOutId: invoiceOutIdResult });
+    await notifyDocumentEvent(
+      ctx.orgId, "INVOICE_OUT_CREATED", { invoiceOutId: invoiceOutIdResult }, "INVOICE_OUT", "CREATED", invoiceOutIdResult,
+    );
   }
   return { invoiceOutId: invoiceOutIdResult };
 }
@@ -200,36 +202,43 @@ export async function updateInvoiceOutStatus(orgSlug: string, invoiceOutId: stri
 
   revalidatePath(`/${orgSlug}/invoices-out`);
   revalidatePath(`/${orgSlug}/invoices-out/${invoiceOutId}`);
-  dispatchWebhookEvent(ctx.orgId, "INVOICE_OUT_STATUS_CHANGED", { invoiceOutId, statusId });
+  await notifyDocumentEvent(
+    ctx.orgId, "INVOICE_OUT_STATUS_CHANGED", { invoiceOutId, statusId }, "INVOICE_OUT", "STATUS_CHANGED", invoiceOutId,
+  );
 }
 
 /**
- * Block M5: convenience shortcut, not the only way to create an invoice
- * (standalone creation via /invoices-out/new is fully supported). Copies a
- * fresh snapshot of the order's own line items (its unitPriceSnapshot/
- * currency, not the catalog's current price) — orderId is provenance only,
- * never re-synced if the order changes after this call.
+ * Block M5: core creation logic, no redirect/permission-check/revalidate —
+ * reused by both createInvoiceFromOrder (manual "Создать счёт" button
+ * below) and Block K's executeCreateRelatedDocument (a scenario's
+ * CREATE_RELATED_DOCUMENT action), which drives its own error handling
+ * instead of these UI-facing side effects. Same extraction pattern as
+ * catalog-variants.ts::createCatalogVariantRecord (Block M6/J).
+ *
+ * Copies a fresh snapshot of the order's own line items (its
+ * unitPriceSnapshot/currency, not the catalog's current price) — orderId is
+ * provenance only, never re-synced if the order changes after this call.
  */
-export async function createInvoiceFromOrder(orgSlug: string, orderId: string): Promise<void> {
-  const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx, "invoicesOut", "create");
-
+export async function createInvoiceOutFromOrderRecord(
+  orgId: string,
+  orderId: string,
+): Promise<{ invoiceOutId: string } | { error: string }> {
   const order = await prisma.order.findFirst({
-    where: { id: orderId, orgId: ctx.orgId },
+    where: { id: orderId, orgId },
     include: { lineItems: true },
   });
   if (!order) {
-    throw new Error("Заказ не найден");
+    return { error: "Заказ не найден" };
   }
 
   const [number, statusId] = await Promise.all([
-    nextInvoiceOutNumber(ctx.orgId),
-    getDefaultStatusId(ctx.orgId, "INVOICE_OUT"),
+    nextInvoiceOutNumber(orgId),
+    getDefaultStatusId(orgId, "INVOICE_OUT"),
   ]);
 
   const invoiceOut = await prisma.invoiceOut.create({
     data: {
-      orgId: ctx.orgId,
+      orgId,
       number,
       statusId,
       clientId: order.clientId,
@@ -248,7 +257,25 @@ export async function createInvoiceFromOrder(orgSlug: string, orderId: string): 
     },
   });
 
+  await notifyDocumentEvent(
+    orgId, "INVOICE_OUT_CREATED", { invoiceOutId: invoiceOut.id }, "INVOICE_OUT", "CREATED", invoiceOut.id,
+  );
+  return { invoiceOutId: invoiceOut.id };
+}
+
+/**
+ * Block M5: convenience shortcut, not the only way to create an invoice
+ * (standalone creation via /invoices-out/new is fully supported).
+ */
+export async function createInvoiceFromOrder(orgSlug: string, orderId: string): Promise<void> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "invoicesOut", "create");
+
+  const result = await createInvoiceOutFromOrderRecord(ctx.orgId, orderId);
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+
   revalidatePath(`/${orgSlug}/invoices-out`);
-  dispatchWebhookEvent(ctx.orgId, "INVOICE_OUT_CREATED", { invoiceOutId: invoiceOut.id });
-  redirect(`/${orgSlug}/invoices-out/${invoiceOut.id}`);
+  redirect(`/${orgSlug}/invoices-out/${result.invoiceOutId}`);
 }

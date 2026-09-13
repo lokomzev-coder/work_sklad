@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma, withDbRetry } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
@@ -6,12 +7,32 @@ import { isRowVisible } from "@/lib/scope";
 import { OrderForm } from "@/components/orders/order-form";
 import { OrderStatusSelect } from "@/components/orders/order-status-select";
 import { FulfillmentPanel } from "@/components/fulfillment/fulfillment-panel";
+import { CreateDocumentMenu } from "@/components/orders/create-document-menu";
 import { PrintDialog } from "@/components/print/print-dialog";
-import { Button } from "@/components/ui/button";
-import { createInvoiceFromOrder } from "@/actions/invoices-out";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { computeOrderPaymentStatus } from "@/lib/orders";
+import { Badge } from "@/components/ui/badge";
+import { formatMoney } from "@/lib/format";
+import { getComments } from "@/lib/comments";
+import { EventFeed } from "@/components/comments/event-feed";
+import { listAttachments } from "@/lib/attachments";
+import { AttachmentList } from "@/components/attachments/attachment-list";
+
+// Block M6: composite key for grouping by (item, variant) — see
+// actions/fulfillment.ts's lineKey for the same idiom used server-side.
+function lineKey(catalogItemId: string, variantId: string | null): string {
+  return `${catalogItemId}:${variantId ?? ""}`;
+}
 
 export default async function EditOrderPage({
   params,
@@ -108,37 +129,76 @@ export default async function EditOrderPage({
     [...activeCatalogItems, ...referencedCatalogItems].map((c) => [c.id, c]),
   );
   const catalogItems = [...catalogItemsById.values()];
-
-  const [stores, demands, salesReturns] = await Promise.all([
-    prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-    prisma.stockMovement.findMany({
-      where: { orderId: order.id, type: "DEMAND" },
-      include: { store: true, lines: true },
-      orderBy: { number: "asc" },
-    }),
-    prisma.stockMovement.findMany({
-      where: { orderId: order.id, type: "SALES_RETURN" },
-      include: { store: true, lines: true },
-      orderBy: { number: "asc" },
-    }),
-  ]);
-
-  const shippedByItem = new Map<string, number>();
-  for (const demand of demands) {
-    for (const line of demand.lines) {
-      shippedByItem.set(
-        line.catalogItemId,
-        (shippedByItem.get(line.catalogItemId) ?? 0) + Number(line.quantity),
-      );
+  // Archived variants referenced by an existing line item may not appear
+  // here (variantInclude only pulls ACTIVE ones) — falls back to null label,
+  // same tolerance as catalogItemsById's own "—" fallbacks elsewhere on this
+  // page.
+  const variantLabelById = new Map<string, string>();
+  for (const item of catalogItems) {
+    for (const v of item.variants) {
+      variantLabelById.set(v.id, variantLabel(v.values) || (v.sku ?? v.id));
     }
   }
-  const returnedByItem = new Map<string, number>();
+
+  // Order redesign added projects/paymentStatus to what was a 3-query
+  // Promise.all — wrapped in withDbRetry (wasn't before) for the same
+  // connection-burst reason as the two batches above.
+  const [stores, projects, demands, salesReturns, paymentStatus, comments] = await withDbRetry(() =>
+    Promise.all([
+      prisma.store.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      prisma.project.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      // "Создать документ" flow: unfiltered on purpose — drafts must still
+      // show up in the "Отгрузки по заказу" list below (so a cashier can
+      // find their way back to an unfinished draft), just badged
+      // differently. `postedDemands` (derived below) is the posted-only
+      // view used for the remaining-to-ship math.
+      prisma.stockMovement.findMany({
+        where: { orderId: order.id, type: "DEMAND" },
+        include: { store: true, lines: true },
+        orderBy: { number: "asc" },
+      }),
+      prisma.stockMovement.findMany({
+        where: { orderId: order.id, type: "SALES_RETURN" },
+        include: { store: true, lines: true },
+        orderBy: { number: "asc" },
+      }),
+      computeOrderPaymentStatus(order.id),
+      getComments(ctx.orgId, "Order", order.id, ctx.employeeId),
+    ]),
+  );
+  const postedDemands = demands.filter((d) => d.isPosted);
+  const attachments = await listAttachments(ctx.orgId, "Order", order.id);
+
+  // Block M6: composite-keyed by (item, variant) so two line items of the
+  // same item but different variants don't collapse into one fulfillment row.
+  const orderedByKey = new Map<string, { catalogItemId: string; variantId: string | null; quantity: number }>();
+  for (const li of order.lineItems) {
+    if (catalogItemsById.get(li.catalogItemId)?.type !== "PRODUCT") continue;
+    const key = lineKey(li.catalogItemId, li.variantId);
+    const existing = orderedByKey.get(key);
+    orderedByKey.set(key, {
+      catalogItemId: li.catalogItemId,
+      variantId: li.variantId,
+      quantity: (existing?.quantity ?? 0) + Number(li.quantity),
+    });
+  }
+  const shippedByKey = new Map<string, { catalogItemId: string; variantId: string | null; quantity: number }>();
+  for (const demand of postedDemands) {
+    for (const line of demand.lines) {
+      const key = lineKey(line.catalogItemId, line.variantId);
+      const existing = shippedByKey.get(key);
+      shippedByKey.set(key, {
+        catalogItemId: line.catalogItemId,
+        variantId: line.variantId,
+        quantity: (existing?.quantity ?? 0) + Number(line.quantity),
+      });
+    }
+  }
+  const returnedByKey = new Map<string, number>();
   for (const ret of salesReturns) {
     for (const line of ret.lines) {
-      returnedByItem.set(
-        line.catalogItemId,
-        (returnedByItem.get(line.catalogItemId) ?? 0) + Number(line.quantity),
-      );
+      const key = lineKey(line.catalogItemId, line.variantId);
+      returnedByKey.set(key, (returnedByKey.get(key) ?? 0) + Number(line.quantity));
     }
   }
 
@@ -147,19 +207,22 @@ export default async function EditOrderPage({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Заказ №{order.number}</h1>
         <div className="flex items-center gap-2">
-          {can(ctx, "invoicesOut", "create") && (
-            <form action={createInvoiceFromOrder.bind(null, org, order.id)}>
-              <Button type="submit" variant="outline" size="sm">
-                Создать счёт
-              </Button>
-            </form>
-          )}
+          <CreateDocumentMenu
+            orgSlug={org}
+            orderId={order.id}
+            canCreateDemand={can(ctx, "warehouse", "create")}
+            canCreateInvoice={can(ctx, "invoicesOut", "create")}
+            canCreatePayment={can(ctx, "payments", "create")}
+            canCreatePurchaseOrder={can(ctx, "purchaseOrders", "create")}
+            canCreateRetailSale={can(ctx, "retail", "create")}
+          />
           <PrintDialog
             documentType="order"
             orgSlug={org}
             documentId={order.id}
             legalEntities={legalEntities.map((e) => ({ id: e.id, name: e.name }))}
             currentLegalEntityId={order.legalEntityId}
+            openPdfInBrowser={ctx.openPdfInBrowser}
           />
           <OrderStatusSelect
             orgSlug={org}
@@ -168,6 +231,16 @@ export default async function EditOrderPage({
             statusOptions={statusOptions}
           />
         </div>
+      </div>
+      {/* Order redesign: "Оплата" is never stored — always derived from
+          Payment rows, so it renders here (read-only), not inside the
+          editable OrderForm. */}
+      <div>
+        <Badge variant={paymentStatus.isPaid ? "default" : "secondary"}>
+          {paymentStatus.isPaid
+            ? "Оплачено"
+            : `Оплачено ${formatMoney(paymentStatus.totalPaid, paymentStatus.currency)} из ${formatMoney(paymentStatus.totalOrder, paymentStatus.currency)}`}
+        </Badge>
       </div>
       <OrderForm
         orgSlug={org}
@@ -182,15 +255,19 @@ export default async function EditOrderPage({
           name: c.name,
           unitPrice: c.unitPrice.toString(),
           currency: c.currency,
+          barcode: c.barcode,
           variants: c.variants.map((v) => ({
             id: v.id,
             label: variantLabel(v.values) || (v.sku ?? v.id),
             price: v.priceOverride?.toString() ?? null,
+            barcode: v.barcode,
           })),
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         salesChannelOptions={salesChannels.map((c) => ({ value: c.id, label: c.name }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
+        storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
+        projectOptions={projects.map((p) => ({ value: p.id, label: p.name }))}
         customFieldDefs={customFieldDefs}
         defaultValues={{
           clientId: order.clientId,
@@ -198,6 +275,10 @@ export default async function EditOrderPage({
           contractId: order.contractId,
           salesChannelId: order.salesChannelId,
           legalEntityId: order.legalEntityId,
+          storeId: order.storeId,
+          projectId: order.projectId,
+          isPosted: order.isPosted,
+          isReserved: order.isReserved,
           lineItems: order.lineItems.map((li) => ({
             catalogItemId: li.catalogItemId,
             variantId: li.variantId,
@@ -206,39 +287,57 @@ export default async function EditOrderPage({
           customFieldValues,
         }}
       />
-      <FulfillmentPanel
-        orgSlug={org}
-        kind="demand"
-        parentId={order.id}
-        storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
-        defaultStoreId={ctx.defaultStoreId}
-        lines={order.lineItems
-          .filter((li) => catalogItemsById.get(li.catalogItemId)?.type === "PRODUCT")
-          .map((li) => ({
-            catalogItemId: li.catalogItemId,
-            name: catalogItemsById.get(li.catalogItemId)?.name ?? "—",
-            ordered: Number(li.quantity),
-            fulfilled: shippedByItem.get(li.catalogItemId) ?? 0,
-          }))}
-        history={demands.map((d) => ({
-          id: d.id,
-          number: d.number,
-          storeName: d.store.name,
-          createdAt: d.createdAt.toLocaleDateString("ru-RU"),
-        }))}
-      />
+      {/* "Создать документ" flow: Отгрузка is no longer an inline form here
+          — the button above creates a draft and redirects straight to its
+          own /warehouse/[id] page (МойСклад model). This list is just for
+          finding your way back to any шipment (draft or posted) already
+          tied to this order. */}
       {demands.length > 0 && (
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>№</TableHead>
+                <TableHead>Склад</TableHead>
+                <TableHead>Статус</TableHead>
+                <TableHead>Дата</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {demands.map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell>
+                    <Link href={`/${org}/warehouse/${d.id}`} className="underline">
+                      №{d.number}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{d.store.name}</TableCell>
+                  <TableCell>
+                    <Badge variant={d.isPosted ? "default" : "secondary"}>
+                      {d.isPosted ? "Проведено" : "Черновик"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{d.createdAt.toLocaleDateString("ru-RU")}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+      {postedDemands.length > 0 && (
       <FulfillmentPanel
         orgSlug={org}
         kind="salesReturn"
         parentId={order.id}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
         defaultStoreId={ctx.defaultStoreId}
-        lines={[...shippedByItem.keys()].map((catalogItemId) => ({
-          catalogItemId,
-          name: catalogItemsById.get(catalogItemId)?.name ?? "—",
-          ordered: shippedByItem.get(catalogItemId) ?? 0,
-          fulfilled: returnedByItem.get(catalogItemId) ?? 0,
+        lines={[...shippedByKey.entries()].map(([key, s]) => ({
+          catalogItemId: s.catalogItemId,
+          variantId: s.variantId,
+          variantLabel: s.variantId ? (variantLabelById.get(s.variantId) ?? null) : null,
+          name: catalogItemsById.get(s.catalogItemId)?.name ?? "—",
+          ordered: s.quantity,
+          fulfilled: returnedByKey.get(key) ?? 0,
         }))}
         history={salesReturns.map((r) => ({
           id: r.id,
@@ -248,6 +347,20 @@ export default async function EditOrderPage({
         }))}
       />
       )}
+      <AttachmentList
+        orgSlug={org}
+        entityType="Order"
+        entityId={order.id}
+        revalidateHref={`/${org}/orders/${order.id}`}
+        attachments={attachments}
+      />
+      <EventFeed
+        orgSlug={org}
+        entityType="Order"
+        entityId={order.id}
+        revalidateHref={`/${org}/orders/${order.id}`}
+        comments={comments}
+      />
     </div>
   );
 }

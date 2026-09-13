@@ -15,4 +15,9 @@ export const changeOwnPasswordSchema = z.object({
 export const updateOwnDefaultsSchema = z.object({
   defaultStoreId: z.string().min(1).nullable().optional(),
   defaultLegalEntityId: z.string().min(1).nullable().optional(),
+  // Block M4 phase B — same checkbox-to-FormData convention as isDefault on
+  // legal-entity-form.tsx/price-type-form.tsx: absent (unchecked) becomes
+  // `null` from formData.get, which z.coerce.boolean() correctly reads as
+  // false.
+  openPdfInBrowser: z.coerce.boolean().optional(),
 });

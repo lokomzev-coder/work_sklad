@@ -10,7 +10,7 @@ export interface ActionResult {
   error?: string;
 }
 
-const roleSchema = z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]);
+const roleSchema = z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION", "CASHIER"]);
 
 export async function createStatusTransition(
   orgSlug: string,

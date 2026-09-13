@@ -6,8 +6,13 @@ import { InvoiceInForm } from "@/components/invoices/invoice-in-form";
 import { InvoiceInStatusSelect } from "@/components/invoices/invoice-in-status-select";
 import { InvoicePaymentPanel } from "@/components/invoices/invoice-payment-panel";
 import { PrintDialog } from "@/components/print/print-dialog";
+import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { getComments } from "@/lib/comments";
+import { EventFeed } from "@/components/comments/event-feed";
+import { listAttachments } from "@/lib/attachments";
+import { AttachmentList } from "@/components/attachments/attachment-list";
 
 export default async function InvoiceInDetailPage({
   params,
@@ -26,6 +31,13 @@ export default async function InvoiceInDetailPage({
 
   const referencedCatalogItemIds = invoiceIn.lineItems.map((li) => li.catalogItemId);
 
+  const variantInclude = {
+    variants: {
+      where: { status: "ACTIVE" as const },
+      include: { values: { include: { characteristic: true } } },
+    },
+  };
+
   // withDbRetry (lib/prisma.ts): see orders/[id]/page.tsx's comment — the
   // local `prisma dev` proxy can choke on a burst of simultaneous new
   // connections; split into two smaller batches as a second layer, safe
@@ -33,13 +45,20 @@ export default async function InvoiceInDetailPage({
   const [activeSuppliers, activeCatalogItems, referencedSupplier, referencedCatalogItems] = await withDbRetry(() =>
     Promise.all([
       prisma.client.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
-      prisma.catalogItem.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
+      prisma.catalogItem.findMany({
+        where: { orgId: ctx.orgId, status: "ACTIVE" },
+        orderBy: { name: "asc" },
+        include: variantInclude,
+      }),
       invoiceIn.supplierId ? prisma.client.findUnique({ where: { id: invoiceIn.supplierId } }) : null,
-      prisma.catalogItem.findMany({ where: { id: { in: referencedCatalogItemIds } } }),
+      prisma.catalogItem.findMany({
+        where: { id: { in: referencedCatalogItemIds } },
+        include: variantInclude,
+      }),
     ]),
   );
 
-  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments] = await withDbRetry(
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments] = await withDbRetry(
     () =>
       Promise.all([
         prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
@@ -52,8 +71,10 @@ export default async function InvoiceInDetailPage({
         listCustomFieldDefinitions(ctx.orgId, "INVOICE_IN"),
         getCustomFieldValues(invoiceIn.id),
         prisma.payment.findMany({ where: { invoiceInId: invoiceIn.id }, orderBy: { createdAt: "desc" } }),
+        getComments(ctx.orgId, "InvoiceIn", invoiceIn.id, ctx.employeeId),
       ]),
   );
+  const attachments = await listAttachments(ctx.orgId, "InvoiceIn", invoiceIn.id);
 
   const suppliers = referencedSupplier
     ? [referencedSupplier, ...activeSuppliers.filter((c) => c.id !== referencedSupplier.id)]
@@ -76,6 +97,7 @@ export default async function InvoiceInDetailPage({
             documentId={invoiceIn.id}
             legalEntities={legalEntities.map((e) => ({ id: e.id, name: e.name }))}
             currentLegalEntityId={invoiceIn.legalEntityId}
+            openPdfInBrowser={ctx.openPdfInBrowser}
           />
           <InvoiceInStatusSelect
             orgSlug={org}
@@ -94,6 +116,10 @@ export default async function InvoiceInDetailPage({
           name: c.name,
           unitPrice: c.unitPrice.toString(),
           currency: c.currency,
+          variants: c.variants.map((v) => ({
+            id: v.id,
+            label: variantLabel(v.values) || (v.sku ?? v.id),
+          })),
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
@@ -109,6 +135,7 @@ export default async function InvoiceInDetailPage({
           legalEntityId: invoiceIn.legalEntityId,
           lineItems: invoiceIn.lineItems.map((li) => ({
             catalogItemId: li.catalogItemId,
+            variantId: li.variantId,
             quantity: li.quantity.toString(),
             unitCost: li.unitPriceSnapshot.toString(),
           })),
@@ -129,6 +156,20 @@ export default async function InvoiceInDetailPage({
           createdAt: p.createdAt.toLocaleDateString("ru-RU"),
           comment: p.comment,
         }))}
+      />
+      <AttachmentList
+        orgSlug={org}
+        entityType="InvoiceIn"
+        entityId={invoiceIn.id}
+        revalidateHref={`/${org}/invoices-in/${invoiceIn.id}`}
+        attachments={attachments}
+      />
+      <EventFeed
+        orgSlug={org}
+        entityType="InvoiceIn"
+        entityId={invoiceIn.id}
+        revalidateHref={`/${org}/invoices-in/${invoiceIn.id}`}
+        comments={comments}
       />
     </div>
   );

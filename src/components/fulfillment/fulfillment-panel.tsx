@@ -18,17 +18,24 @@ import {
 } from "@/components/ui/table";
 import { EntityCombobox, type ComboboxOption } from "@/components/forms/entity-combobox";
 import {
-  createDemand,
-  createSupply,
   createSalesReturn,
   createPurchaseReturn,
 } from "@/actions/fulfillment";
 
 export interface FulfillmentLine {
   catalogItemId: string;
+  // Block M6: which modification this line is for, if any — two lines of
+  // the same item but different variants must render/submit as separate
+  // rows, not collapse into one (see lineKey below).
+  variantId: string | null;
+  variantLabel: string | null;
   name: string;
   ordered: number;
   fulfilled: number;
+}
+
+function lineKey(catalogItemId: string, variantId: string | null): string {
+  return `${catalogItemId}:${variantId ?? ""}`;
 }
 
 export interface FulfillmentHistoryEntry {
@@ -38,7 +45,13 @@ export interface FulfillmentHistoryEntry {
   storeName: string;
 }
 
-type FulfillmentKind = "demand" | "supply" | "salesReturn" | "purchaseReturn";
+// "demand" removed — Отгрузка now goes through "Создать документ" →
+// createDraftDemand/postDraftDemand (see components/orders/create-document-menu.tsx),
+// not this always-visible inline panel. "supply" removed the same way
+// (Block K remainder) — Приёмка now goes through createDraftSupply/
+// postDraftSupply (components/purchase-orders/create-supply-button.tsx),
+// this panel keeps only the two kinds still atomic create-and-post.
+type FulfillmentKind = "salesReturn" | "purchaseReturn";
 
 interface FulfillmentPanelProps {
   orgSlug: string;
@@ -52,9 +65,7 @@ interface FulfillmentPanelProps {
   history: FulfillmentHistoryEntry[];
 }
 
-const ACTIONS: Record<FulfillmentKind, typeof createDemand> = {
-  demand: createDemand,
-  supply: createSupply,
+const ACTIONS: Record<FulfillmentKind, typeof createSalesReturn> = {
   salesReturn: createSalesReturn,
   purchaseReturn: createPurchaseReturn,
 };
@@ -70,22 +81,6 @@ const LABELS: Record<
     emptyMessage: string;
   }
 > = {
-  demand: {
-    title: "Отгрузка",
-    action: "Отгрузить",
-    submitting: "Отгружаем...",
-    successToast: "Отгрузка проведена",
-    remainingLabel: "Осталось отгрузить",
-    emptyMessage: "Всё отгружено",
-  },
-  supply: {
-    title: "Приёмка",
-    action: "Принять",
-    submitting: "Принимаем...",
-    successToast: "Приёмка проведена",
-    remainingLabel: "Осталось принять",
-    emptyMessage: "Всё принято",
-  },
   salesReturn: {
     title: "Возврат от клиента",
     action: "Оформить возврат",
@@ -133,7 +128,14 @@ export function FulfillmentPanel({
     }
 
     const requestLines = remainingLines
-      .map((l) => ({ catalogItemId: l.catalogItemId, quantity: Number(quantities[l.catalogItemId] || 0) }))
+      .map((l) => {
+        const key = lineKey(l.catalogItemId, l.variantId);
+        return {
+          catalogItemId: l.catalogItemId,
+          variantId: l.variantId,
+          quantity: Number(quantities[key] || 0),
+        };
+      })
       .filter((l) => l.quantity > 0);
 
     if (requestLines.length === 0) {
@@ -202,26 +204,30 @@ export function FulfillmentPanel({
               />
             </div>
             <div className="flex flex-col gap-2">
-              {remainingLines.map((line) => (
-                <div key={line.catalogItemId} className="flex items-center gap-3">
-                  <span className="flex-1 text-sm">{line.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {labels.remainingLabel}: {line.remaining}
-                  </span>
-                  <Input
-                    type="number"
-                    min="0"
-                    max={line.remaining}
-                    step="0.001"
-                    className="w-28"
-                    placeholder="0"
-                    value={quantities[line.catalogItemId] ?? ""}
-                    onChange={(e) =>
-                      setQuantities((prev) => ({ ...prev, [line.catalogItemId]: e.target.value }))
-                    }
-                  />
-                </div>
-              ))}
+              {remainingLines.map((line) => {
+                const key = lineKey(line.catalogItemId, line.variantId);
+                return (
+                  <div key={key} className="flex flex-wrap items-center gap-3">
+                    <span className="flex-1 text-sm">
+                      {line.name}
+                      {line.variantLabel ? ` — ${line.variantLabel}` : ""}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {labels.remainingLabel}: {line.remaining}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max={line.remaining}
+                      step="0.001"
+                      className="w-28"
+                      placeholder="0"
+                      value={quantities[key] ?? ""}
+                      onChange={(e) => setQuantities((prev) => ({ ...prev, [key]: e.target.value }))}
+                    />
+                  </div>
+                );
+              })}
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </>

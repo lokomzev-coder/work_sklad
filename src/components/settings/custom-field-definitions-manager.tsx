@@ -30,21 +30,25 @@ const TYPE_LABELS: Record<CustomFieldType, string> = {
   DATE: "Дата",
   BOOLEAN: "Да/нет",
   SELECT: "Список",
+  CUSTOM_ENTITY: "Справочник",
 };
 
 export function CustomFieldDefinitionsManager({
   orgSlug,
   entityType,
   defs,
+  customEntityTypes,
 }: {
   orgSlug: string;
   entityType: CustomFieldEntityType;
   defs: Def[];
+  customEntityTypes: { id: string; name: string }[];
 }) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState("");
   const [type, setType] = useState<CustomFieldType>("TEXT");
   const [options, setOptions] = useState("");
+  const [customEntityTypeId, setCustomEntityTypeId] = useState("");
 
   function handleCreate() {
     if (!name.trim()) return;
@@ -52,6 +56,7 @@ export function CustomFieldDefinitionsManager({
     formData.set("name", name.trim());
     formData.set("type", type);
     formData.set("options", options);
+    if (type === "CUSTOM_ENTITY") formData.set("customEntityTypeId", customEntityTypeId);
     startTransition(async () => {
       const result = await createCustomFieldDefinition(orgSlug, entityType, {}, formData);
       if (result.error) {
@@ -59,6 +64,7 @@ export function CustomFieldDefinitionsManager({
       } else {
         setName("");
         setOptions("");
+        setCustomEntityTypeId("");
       }
     });
   }
@@ -87,7 +93,7 @@ export function CustomFieldDefinitionsManager({
               <TableCell className="font-medium">{def.name}</TableCell>
               <TableCell>{TYPE_LABELS[def.type]}</TableCell>
               <TableCell className="text-muted-foreground">
-                {def.type === "SELECT" ? def.options.join(", ") : "—"}
+                {def.type === "SELECT" || def.type === "CUSTOM_ENTITY" ? def.options.join(", ") : "—"}
               </TableCell>
               <TableCell className="text-right">
                 <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => handleDelete(def.id)}>
@@ -128,9 +134,36 @@ export function CustomFieldDefinitionsManager({
                   onChange={(e) => setOptions(e.target.value)}
                 />
               )}
+              {type === "CUSTOM_ENTITY" && (
+                customEntityTypes.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">Сначала создайте справочник на вкладке «Справочники»</span>
+                ) : (
+                  <Select
+                    value={customEntityTypeId}
+                    items={Object.fromEntries(customEntityTypes.map((t) => [t.id, t.name]))}
+                    onValueChange={(v) => setCustomEntityTypeId(v ?? "")}
+                  >
+                    <SelectTrigger className="h-8 w-full">
+                      <SelectValue placeholder="Выберите справочник" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customEntityTypes.map((t) => (
+                        <SelectItem key={t.id} value={t.id}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )
+              )}
             </TableCell>
             <TableCell className="text-right">
-              <Button type="button" size="sm" disabled={isPending || !name.trim()} onClick={handleCreate}>
+              <Button
+                type="button"
+                size="sm"
+                disabled={isPending || !name.trim() || (type === "CUSTOM_ENTITY" && !customEntityTypeId)}
+                onClick={handleCreate}
+              >
                 Добавить
               </Button>
             </TableCell>

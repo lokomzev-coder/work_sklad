@@ -7,8 +7,9 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { assertRowScope, resolveGroupMemberIds } from "@/lib/scope";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
-import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
+import { syncOrderReservations } from "@/lib/orders";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
@@ -22,6 +23,10 @@ const upsertOrderSchema = z.object({
   contractId: z.string().min(1).nullable().optional(),
   salesChannelId: z.string().min(1).nullable().optional(),
   legalEntityId: z.string().min(1).nullable().optional(),
+  storeId: z.string().min(1).nullable().optional(),
+  projectId: z.string().min(1).nullable().optional(),
+  isPosted: z.boolean().optional().default(false),
+  isReserved: z.boolean().optional().default(false),
   lineItems: z.array(lineItemSchema).min(1, "Добавьте хотя бы одну позицию"),
 });
 
@@ -31,6 +36,10 @@ export interface UpsertOrderInput {
   contractId?: string | null;
   salesChannelId?: string | null;
   legalEntityId?: string | null;
+  storeId?: string | null;
+  projectId?: string | null;
+  isPosted?: boolean;
+  isReserved?: boolean;
   lineItems: { catalogItemId: string; variantId?: string | null; quantity: number }[];
   customFieldValues?: Record<string, string>;
 }
@@ -132,6 +141,28 @@ export async function upsertOrder(
       return { error: "Юрлицо не найдено" };
     }
   }
+  if (parsed.data.storeId) {
+    const store = await prisma.store.findFirst({
+      where: { id: parsed.data.storeId, orgId: ctx.orgId, status: "ACTIVE" },
+    });
+    if (!store) {
+      return { error: "Склад не найден или в архиве" };
+    }
+  }
+  if (parsed.data.projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: parsed.data.projectId, orgId: ctx.orgId },
+    });
+    if (!project) {
+      return { error: "Проект не найден" };
+    }
+  }
+  // Order redesign: server-authoritative invariant (not just UI-disabled) —
+  // Резерв requires the order to be Проведено and to have a warehouse to
+  // reserve stock at.
+  if (parsed.data.isReserved && !(parsed.data.isPosted && parsed.data.storeId)) {
+    return { error: "Резерв требует, чтобы заказ был проведён и был выбран склад" };
+  }
 
   const lineItemsCreateData = parsed.data.lineItems.map((li) => {
     const variant = li.variantId ? variantById.get(li.variantId) : undefined;
@@ -150,9 +181,12 @@ export async function upsertOrder(
   let isNewOrder = false;
 
   if (orderId) {
-    await prisma.$transaction([
-      prisma.orderLineItem.deleteMany({ where: { orderId } }),
-      prisma.order.update({
+    // Order redesign: interactive transaction (was an array-form
+    // transaction) so syncOrderReservations can run after the line items
+    // are recreated, inside the same atomic unit.
+    await prisma.$transaction(async (tx) => {
+      await tx.orderLineItem.deleteMany({ where: { orderId } });
+      await tx.order.update({
         where: { id: orderId, orgId: ctx.orgId },
         data: {
           clientId: parsed.data.clientId,
@@ -160,10 +194,15 @@ export async function upsertOrder(
           contractId: parsed.data.contractId ?? null,
           salesChannelId: parsed.data.salesChannelId ?? null,
           legalEntityId: parsed.data.legalEntityId ?? null,
+          storeId: parsed.data.storeId ?? null,
+          projectId: parsed.data.projectId ?? null,
+          isPosted: parsed.data.isPosted,
+          isReserved: parsed.data.isReserved,
           lineItems: { create: lineItemsCreateData },
         },
-      }),
-    ]);
+      });
+      await syncOrderReservations(tx, ctx.orgId, orderId);
+    });
     orderIdResult = orderId;
   } else {
     // Low concurrency expected (single org admin creating orders); a
@@ -172,20 +211,27 @@ export async function upsertOrder(
       nextOrderNumber(ctx.orgId),
       getDefaultStatusId(ctx.orgId, "ORDER"),
     ]);
-    const order = await prisma.order.create({
-      data: {
-        orgId: ctx.orgId,
-        number,
-        statusId,
-        clientId: parsed.data.clientId,
-        assignedEmployeeId: parsed.data.assignedEmployeeId,
-        contractId: parsed.data.contractId ?? null,
-        salesChannelId: parsed.data.salesChannelId ?? null,
-        legalEntityId: parsed.data.legalEntityId ?? null,
-        lineItems: { create: lineItemsCreateData },
-      },
+    orderIdResult = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          orgId: ctx.orgId,
+          number,
+          statusId,
+          clientId: parsed.data.clientId,
+          assignedEmployeeId: parsed.data.assignedEmployeeId,
+          contractId: parsed.data.contractId ?? null,
+          salesChannelId: parsed.data.salesChannelId ?? null,
+          legalEntityId: parsed.data.legalEntityId ?? null,
+          storeId: parsed.data.storeId ?? null,
+          projectId: parsed.data.projectId ?? null,
+          isPosted: parsed.data.isPosted,
+          isReserved: parsed.data.isReserved,
+          lineItems: { create: lineItemsCreateData },
+        },
+      });
+      await syncOrderReservations(tx, ctx.orgId, order.id);
+      return order.id;
     });
-    orderIdResult = order.id;
     isNewOrder = true;
   }
 
@@ -196,7 +242,7 @@ export async function upsertOrder(
   revalidatePath(`/${orgSlug}/orders`);
   revalidatePath(`/${orgSlug}/orders/${orderIdResult}`);
   if (isNewOrder) {
-    dispatchWebhookEvent(ctx.orgId, "ORDER_CREATED", { orderId: orderIdResult });
+    await notifyDocumentEvent(ctx.orgId, "ORDER_CREATED", { orderId: orderIdResult }, "ORDER", "CREATED", orderIdResult);
   }
   return { orderId: orderIdResult };
 }
@@ -243,5 +289,5 @@ export async function updateOrderStatus(
 
   revalidatePath(`/${orgSlug}/orders`);
   revalidatePath(`/${orgSlug}/orders/${orderId}`);
-  dispatchWebhookEvent(ctx.orgId, "ORDER_STATUS_CHANGED", { orderId, statusId });
+  await notifyDocumentEvent(ctx.orgId, "ORDER_STATUS_CHANGED", { orderId, statusId }, "ORDER", "STATUS_CHANGED", orderId);
 }

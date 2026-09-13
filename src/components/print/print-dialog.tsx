@@ -46,15 +46,27 @@ interface PrintDialogProps {
    * (ProductionOrder has no legalEntityId of its own to override). */
   legalEntities?: { id: string; name: string }[];
   currentLegalEntityId?: string | null;
+  /** Block M4 phase B — this employee's personal preference (Employee.
+   * openPdfInBrowser, self-service in /settings/profile): true opens the
+   * server-rendered PDF inline in a new tab, false forces a save-as
+   * download. Purely which behavior the "Скачать PDF" button uses, not a
+   * capability check — both are always available. */
+  openPdfInBrowser?: boolean;
 }
 
 /**
- * Block M4 (Phase A) — replaces the old plain PrintButton link with a
- * dialog offering per-printout overrides (legal entity, show/hide prices)
- * plus a labels tab for barcode labels on this document's line items.
- * Server-side PDF generation (Phase B) is deliberately not part of this —
- * these buttons still just open the existing browser-print HTML pages in a
- * new tab, now with query params attached.
+ * Block M4 — Phase A replaced the old plain PrintButton link with a dialog
+ * offering per-printout overrides (legal entity, show/hide prices) plus a
+ * labels tab for barcode labels on this document's line items; those
+ * buttons still just open the existing browser-print HTML pages in a new
+ * tab, letting the caller's own browser handle Ctrl+P.
+ *
+ * Phase B adds "Скачать PDF" next to it — same query-param URL, but routed
+ * through `/api/print/pdf` (src/app/api/print/pdf/route.ts), which renders
+ * that exact page server-side via a headless Chromium and returns an actual
+ * PDF file instead of an HTML page. Both buttons stay available side by
+ * side; `openPdfInBrowser` only decides whether that PDF opens inline
+ * (target="_blank") or downloads straight to disk.
  */
 export function PrintDialog({
   documentType,
@@ -62,6 +74,7 @@ export function PrintDialog({
   documentId,
   legalEntities = [],
   currentLegalEntityId = null,
+  openPdfInBrowser = false,
 }: PrintDialogProps) {
   const [open, setOpen] = useState(false);
   const [legalEntityId, setLegalEntityId] = useState<string | null>(currentLegalEntityId);
@@ -86,6 +99,8 @@ export function PrintDialog({
     if (!showPrices) qs.set("prices", "0");
     return `${basePath}/labels?${qs.toString()}`;
   })();
+
+  const pdfHref = (path: string) => `/api/print/pdf?path=${encodeURIComponent(path)}`;
 
   const legalEntityItems = Object.fromEntries(legalEntities.map((e) => [e.id, e.name]));
 
@@ -116,13 +131,32 @@ export function PrintDialog({
         </div>
       )}
       {priceCheckbox}
-      <Button
-        type="button"
-        render={<a href={docHref} target="_blank" rel="noopener" />}
-        onClick={() => setOpen(false)}
-      >
-        Открыть для печати
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          render={<a href={docHref} target="_blank" rel="noopener" />}
+          onClick={() => setOpen(false)}
+        >
+          Открыть для печати
+        </Button>
+        <Button
+          type="button"
+          className="flex-1"
+          render={
+            <a
+              href={pdfHref(docHref)}
+              target={openPdfInBrowser ? "_blank" : undefined}
+              download={openPdfInBrowser ? undefined : true}
+              rel="noopener"
+            />
+          }
+          onClick={() => setOpen(false)}
+        >
+          Скачать PDF
+        </Button>
+      </div>
     </div>
   );
 
@@ -145,13 +179,32 @@ export function PrintDialog({
         </Select>
       </div>
       {priceCheckbox}
-      <Button
-        type="button"
-        render={<a href={labelsHref} target="_blank" rel="noopener" />}
-        onClick={() => setOpen(false)}
-      >
-        Открыть для печати
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          render={<a href={labelsHref} target="_blank" rel="noopener" />}
+          onClick={() => setOpen(false)}
+        >
+          Открыть для печати
+        </Button>
+        <Button
+          type="button"
+          className="flex-1"
+          render={
+            <a
+              href={pdfHref(labelsHref)}
+              target={openPdfInBrowser ? "_blank" : undefined}
+              download={openPdfInBrowser ? undefined : true}
+              rel="noopener"
+            />
+          }
+          onClick={() => setOpen(false)}
+        >
+          Скачать PDF
+        </Button>
+      </div>
     </div>
   );
 

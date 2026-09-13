@@ -1,6 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { retryPendingDeliveries } from "@/lib/webhooks";
+import { verifyCronRequest } from "@/lib/cron-auth";
 
 /**
  * Block M3 — driven by an external scheduler (deploy platform still
@@ -21,25 +21,9 @@ import { retryPendingDeliveries } from "@/lib/webhooks";
  */
 export const dynamic = "force-dynamic";
 
-function safeEqual(a: string, b: string): boolean {
-  const hashA = createHash("sha256").update(a).digest();
-  const hashB = createHash("sha256").update(b).digest();
-  return timingSafeEqual(hashA, hashB);
-}
-
 export async function GET(request: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-
-  if (process.env.NODE_ENV === "production" && !secret) {
-    return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 500 });
-  }
-
-  if (secret) {
-    const auth = request.headers.get("authorization") ?? "";
-    if (!safeEqual(auth, `Bearer ${secret}`)) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authError = verifyCronRequest(request);
+  if (authError) return authError;
 
   const result = await retryPendingDeliveries();
   return NextResponse.json(result);

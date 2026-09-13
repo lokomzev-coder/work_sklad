@@ -18,6 +18,9 @@ import { statusBadgeClass } from "@/lib/status-color";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { AreaTrendChart } from "@/components/charts/area-trend-chart";
+import { KpiCard } from "@/components/dashboard/kpi-card";
+import type { ValueFormat } from "@/lib/format";
 
 export default async function MoneyReportPage({
   params,
@@ -31,10 +34,11 @@ export default async function MoneyReportPage({
   const ctx = await getOrgContext(org);
   if (!can(ctx, "reports", "view")) notFound();
 
-  const report = await getMoneyReport(ctx.orgId, {
+  const range = {
     from: from ? new Date(from) : undefined,
     to: to ? new Date(`${to}T23:59:59`) : undefined,
-  });
+  };
+  const report = await getMoneyReport(ctx.orgId, range);
 
   return (
     <div className="flex flex-col gap-4">
@@ -43,25 +47,38 @@ export default async function MoneyReportPage({
       <PeriodFilter from={from} to={to} />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Поступления за период</div>
-            <div className="text-xl font-semibold">{formatMoney(report.periodIn, report.baseCurrency)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Выплаты за период</div>
-            <div className="text-xl font-semibold">{formatMoney(report.periodOut, report.baseCurrency)}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground">Текущий денежный остаток</div>
-            <div className="text-xl font-semibold">{formatMoney(report.currentBalance, report.baseCurrency)}</div>
-          </CardContent>
-        </Card>
+        <KpiCard
+          label="Поступления за период"
+          value={formatMoney(report.periodIn, report.baseCurrency)}
+          changePct={range.from && range.to ? report.periodInChangePct : undefined}
+        />
+        <KpiCard
+          label="Выплаты за период"
+          value={formatMoney(report.periodOut, report.baseCurrency)}
+          changePct={range.from && range.to ? report.periodOutChangePct : undefined}
+        />
+        <KpiCard label="Текущий денежный остаток" value={formatMoney(report.currentBalance, report.baseCurrency)} />
       </div>
+
+      {report.daily.length > 0 ? (
+        <Card>
+          <CardContent className="pt-6">
+            <AreaTrendChart
+              data={report.daily}
+              series={[
+                { key: "cashIn", label: "Приход", color: "var(--chart-1)" },
+                { key: "cashOut", label: "Расход", color: "var(--chart-4)" },
+              ]}
+              format={{ kind: "money", currency: report.baseCurrency } satisfies ValueFormat}
+              className="h-64 w-full"
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Выберите период (оба поля «с» и «по») выше, чтобы увидеть график по дням.
+        </p>
+      )}
 
       <div className="rounded-md border">
         <Table>

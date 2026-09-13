@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,12 +51,18 @@ interface DefaultsFormProps {
   action: (prevState: ActionResult, formData: FormData) => Promise<ActionResult>;
   storeOptions: ComboboxOption[];
   legalEntityOptions: ComboboxOption[];
-  defaultValues: { defaultStoreId: string | null; defaultLegalEntityId: string | null };
+  defaultValues: {
+    defaultStoreId: string | null;
+    defaultLegalEntityId: string | null;
+    openPdfInBrowser: boolean;
+  };
 }
 
 /** Block I2.4 — self-service document defaults (store, legal entity), same
  * underlying Employee fields an admin can also set from the employee card
- * (Block I2.2/I2.4) — this is the person configuring it for themselves. */
+ * (Block I2.2/I2.4) — this is the person configuring it for themselves.
+ * Block M4 phase B added `openPdfInBrowser` to the same card — same idea
+ * (a personal convenience default), not a new form. */
 export function DefaultsForm({ action, storeOptions, legalEntityOptions, defaultValues }: DefaultsFormProps) {
   const [state, formAction, pending] = useActionState(action, initialState);
   const [defaultStoreId, setDefaultStoreId] = useState<string | null>(defaultValues.defaultStoreId);
@@ -96,6 +103,10 @@ export function DefaultsForm({ action, storeOptions, legalEntityOptions, default
             Подставляются при создании новых заказов, заказов поставщику, приёмок/отгрузок и
             производственных заданий — не ограничивают выбор.
           </p>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox name="openPdfInBrowser" defaultChecked={defaultValues.openPdfInBrowser} />
+            Открывать PDF в браузере (иначе — сразу скачивать файлом)
+          </label>
           {state.error && <p className="text-sm text-destructive">{state.error}</p>}
           {state.success && <p className="text-sm text-muted-foreground">Сохранено</p>}
         </CardContent>

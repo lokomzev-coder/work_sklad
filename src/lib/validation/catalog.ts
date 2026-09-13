@@ -29,6 +29,13 @@ export const catalogItemSchema = z.object({
     .trim()
     .optional()
     .transform((v) => v || undefined),
+  taxRate: z
+    .enum(["NONE", "VAT_0", "VAT_10", "VAT_20", "VAT_10_110", "VAT_20_120"])
+    .default("NONE"),
+  minStock: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().min(0, "Минимальный остаток не может быть отрицательным").optional(),
+  ),
 });
 
 export type CatalogItemInput = z.infer<typeof catalogItemSchema>;

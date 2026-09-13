@@ -3,13 +3,14 @@ import { cn } from "@/lib/utils";
 
 interface WarehouseSubnavProps {
   org: string;
-  active: "movements" | "stock" | "stores";
+  active: "movements" | "stock" | "stores" | "picking-waves";
 }
 
 const TABS = [
   { key: "movements", label: "Движения", href: "" },
   { key: "stock", label: "Остатки", href: "/stock" },
   { key: "stores", label: "Склады", href: "/stores" },
+  { key: "picking-waves", label: "Волны отбора", href: "/picking-waves" },
 ] as const;
 
 export function WarehouseSubnav({ org, active }: WarehouseSubnavProps) {

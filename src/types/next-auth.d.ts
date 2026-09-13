@@ -14,7 +14,11 @@ declare module "next-auth" {
       email: string;
       name: string;
     };
-    memberships: OrgMembership[];
+    // Optional — Блок L's admin-panel session (lib/admin-auth.ts) shares
+    // this same global module augmentation (both instances import types
+    // from the same "next-auth" package) but has no org memberships at
+    // all; only the org-side session (lib/auth.ts) ever sets this.
+    memberships?: OrgMembership[];
   }
 
   interface User {

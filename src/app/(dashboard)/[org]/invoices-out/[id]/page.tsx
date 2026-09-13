@@ -9,6 +9,10 @@ import { PrintDialog } from "@/components/print/print-dialog";
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { getComments } from "@/lib/comments";
+import { EventFeed } from "@/components/comments/event-feed";
+import { listAttachments } from "@/lib/attachments";
+import { AttachmentList } from "@/components/attachments/attachment-list";
 
 export default async function InvoiceOutDetailPage({
   params,
@@ -50,7 +54,7 @@ export default async function InvoiceOutDetailPage({
     ]),
   );
 
-  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments] = await withDbRetry(
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments] = await withDbRetry(
     () =>
       Promise.all([
         prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
@@ -63,8 +67,10 @@ export default async function InvoiceOutDetailPage({
         listCustomFieldDefinitions(ctx.orgId, "INVOICE_OUT"),
         getCustomFieldValues(invoiceOut.id),
         prisma.payment.findMany({ where: { invoiceOutId: invoiceOut.id }, orderBy: { createdAt: "desc" } }),
+        getComments(ctx.orgId, "InvoiceOut", invoiceOut.id, ctx.employeeId),
       ]),
   );
+  const attachments = await listAttachments(ctx.orgId, "InvoiceOut", invoiceOut.id);
 
   const clients = referencedClient
     ? [referencedClient, ...activeClients.filter((c) => c.id !== referencedClient.id)]
@@ -90,6 +96,7 @@ export default async function InvoiceOutDetailPage({
             documentId={invoiceOut.id}
             legalEntities={legalEntities.map((e) => ({ id: e.id, name: e.name }))}
             currentLegalEntityId={invoiceOut.legalEntityId}
+            openPdfInBrowser={ctx.openPdfInBrowser}
           />
           <InvoiceOutStatusSelect
             orgSlug={org}
@@ -146,6 +153,20 @@ export default async function InvoiceOutDetailPage({
           createdAt: p.createdAt.toLocaleDateString("ru-RU"),
           comment: p.comment,
         }))}
+      />
+      <AttachmentList
+        orgSlug={org}
+        entityType="InvoiceOut"
+        entityId={invoiceOut.id}
+        revalidateHref={`/${org}/invoices-out/${invoiceOut.id}`}
+        attachments={attachments}
+      />
+      <EventFeed
+        orgSlug={org}
+        entityType="InvoiceOut"
+        entityId={invoiceOut.id}
+        revalidateHref={`/${org}/invoices-out/${invoiceOut.id}`}
+        comments={comments}
       />
     </div>
   );

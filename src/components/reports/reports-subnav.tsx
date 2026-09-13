@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface ReportsSubnavProps {
   org: string;
-  active: "overview" | "turnover" | "money" | "pnl" | "sales-by-client";
+  active: "overview" | "turnover" | "money" | "pnl" | "sales-by-client" | "abc";
 }
 
 const TABS = [
@@ -12,6 +12,7 @@ const TABS = [
   { key: "money", label: "Деньги", href: "/money" },
   { key: "pnl", label: "Прибыли и убытки", href: "/pnl" },
   { key: "sales-by-client", label: "Продажи по клиентам", href: "/sales-by-client" },
+  { key: "abc", label: "ABC-анализ", href: "/abc" },
 ] as const;
 
 export function ReportsSubnav({ org, active }: ReportsSubnavProps) {

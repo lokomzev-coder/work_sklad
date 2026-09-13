@@ -7,11 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { getDefaultStatusId, getAllowedNextStatusIds } from "@/lib/document-statuses";
-import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
+  variantId: z.string().min(1).nullable().optional(),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
   unitCost: z.coerce.number().min(0, "Цена не может быть отрицательной"),
 });
@@ -27,7 +28,7 @@ export interface UpsertInvoiceInInput {
   supplierId: string | null;
   contractId?: string | null;
   legalEntityId?: string | null;
-  lineItems: { catalogItemId: string; quantity: number; unitCost: number }[];
+  lineItems: { catalogItemId: string; variantId?: string | null; quantity: number; unitCost: number }[];
   customFieldValues?: Record<string, string>;
 }
 
@@ -67,6 +68,22 @@ export async function upsertInvoiceIn(
   }
   const currencyById = new Map(catalogItems.map((c) => [c.id, c.currency]));
 
+  const variantIds = [
+    ...new Set(parsed.data.lineItems.map((li) => li.variantId).filter((v): v is string => !!v)),
+  ];
+  const variants = variantIds.length
+    ? await prisma.catalogItemVariant.findMany({ where: { id: { in: variantIds } } })
+    : [];
+  const variantById = new Map(variants.map((v) => [v.id, v]));
+  for (const li of parsed.data.lineItems) {
+    if (li.variantId) {
+      const variant = variantById.get(li.variantId);
+      if (!variant || variant.catalogItemId !== li.catalogItemId) {
+        return { error: "Модификация не найдена" };
+      }
+    }
+  }
+
   if (parsed.data.contractId) {
     const contract = await prisma.contract.findFirst({
       where: { id: parsed.data.contractId, orgId: ctx.orgId },
@@ -86,6 +103,7 @@ export async function upsertInvoiceIn(
 
   const lineItemsCreateData = parsed.data.lineItems.map((li) => ({
     catalogItemId: li.catalogItemId,
+    variantId: li.variantId ?? undefined,
     quantity: li.quantity,
     unitPriceSnapshot: li.unitCost,
     currency: currencyById.get(li.catalogItemId)!,
@@ -135,7 +153,9 @@ export async function upsertInvoiceIn(
   revalidatePath(`/${orgSlug}/invoices-in`);
   revalidatePath(`/${orgSlug}/invoices-in/${invoiceInIdResult}`);
   if (isNew) {
-    dispatchWebhookEvent(ctx.orgId, "INVOICE_IN_CREATED", { invoiceInId: invoiceInIdResult });
+    await notifyDocumentEvent(
+      ctx.orgId, "INVOICE_IN_CREATED", { invoiceInId: invoiceInIdResult }, "INVOICE_IN", "CREATED", invoiceInIdResult,
+    );
   }
   return { invoiceInId: invoiceInIdResult };
 }
@@ -177,30 +197,37 @@ export async function updateInvoiceInStatus(orgSlug: string, invoiceInId: string
 
   revalidatePath(`/${orgSlug}/invoices-in`);
   revalidatePath(`/${orgSlug}/invoices-in/${invoiceInId}`);
-  dispatchWebhookEvent(ctx.orgId, "INVOICE_IN_STATUS_CHANGED", { invoiceInId, statusId });
+  await notifyDocumentEvent(
+    ctx.orgId, "INVOICE_IN_STATUS_CHANGED", { invoiceInId, statusId }, "INVOICE_IN", "STATUS_CHANGED", invoiceInId,
+  );
 }
 
-/** Block M5: mirror of createInvoiceFromOrder — see its comment. */
-export async function createInvoiceFromPurchaseOrder(orgSlug: string, purchaseOrderId: string): Promise<void> {
-  const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx, "invoicesIn", "create");
-
+/**
+ * Block M5: core creation logic, no redirect/permission-check/revalidate —
+ * reused by createInvoiceFromPurchaseOrder below and Block K's
+ * executeCreateRelatedDocument. Mirror of
+ * invoices-out.ts::createInvoiceOutFromOrderRecord — see its comment.
+ */
+export async function createInvoiceInFromPurchaseOrderRecord(
+  orgId: string,
+  purchaseOrderId: string,
+): Promise<{ invoiceInId: string } | { error: string }> {
   const purchaseOrder = await prisma.purchaseOrder.findFirst({
-    where: { id: purchaseOrderId, orgId: ctx.orgId },
+    where: { id: purchaseOrderId, orgId },
     include: { lineItems: true },
   });
   if (!purchaseOrder) {
-    throw new Error("Заказ поставщику не найден");
+    return { error: "Заказ поставщику не найден" };
   }
 
   const [number, statusId] = await Promise.all([
-    nextInvoiceInNumber(ctx.orgId),
-    getDefaultStatusId(ctx.orgId, "INVOICE_IN"),
+    nextInvoiceInNumber(orgId),
+    getDefaultStatusId(orgId, "INVOICE_IN"),
   ]);
 
   const invoiceIn = await prisma.invoiceIn.create({
     data: {
-      orgId: ctx.orgId,
+      orgId,
       number,
       statusId,
       supplierId: purchaseOrder.supplierId,
@@ -210,6 +237,7 @@ export async function createInvoiceFromPurchaseOrder(orgSlug: string, purchaseOr
       lineItems: {
         create: purchaseOrder.lineItems.map((li) => ({
           catalogItemId: li.catalogItemId,
+          variantId: li.variantId,
           quantity: li.quantity,
           unitPriceSnapshot: li.unitPriceSnapshot,
           currency: li.currency,
@@ -218,7 +246,22 @@ export async function createInvoiceFromPurchaseOrder(orgSlug: string, purchaseOr
     },
   });
 
+  await notifyDocumentEvent(
+    orgId, "INVOICE_IN_CREATED", { invoiceInId: invoiceIn.id }, "INVOICE_IN", "CREATED", invoiceIn.id,
+  );
+  return { invoiceInId: invoiceIn.id };
+}
+
+/** Block M5: mirror of createInvoiceFromOrder — see its comment. */
+export async function createInvoiceFromPurchaseOrder(orgSlug: string, purchaseOrderId: string): Promise<void> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "invoicesIn", "create");
+
+  const result = await createInvoiceInFromPurchaseOrderRecord(ctx.orgId, purchaseOrderId);
+  if ("error" in result) {
+    throw new Error(result.error);
+  }
+
   revalidatePath(`/${orgSlug}/invoices-in`);
-  dispatchWebhookEvent(ctx.orgId, "INVOICE_IN_CREATED", { invoiceInId: invoiceIn.id });
-  redirect(`/${orgSlug}/invoices-in/${invoiceIn.id}`);
+  redirect(`/${orgSlug}/invoices-in/${result.invoiceInId}`);
 }

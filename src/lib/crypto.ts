@@ -113,3 +113,30 @@ export function decryptSecret(
 ): string {
   return decryptWithKey(dek, secret).toString("utf8");
 }
+
+/**
+ * Блок L — encrypts a platform-level secret (currently: PlatformAdmin's
+ * TOTP secret) directly with the app-wide master key, same idiom as
+ * `wrapDek` (auth tag appended to the ciphertext blob, nonce kept
+ * separate — two columns). Deliberately NOT routed through an
+ * organization's DEK: a platform secret doesn't belong to any single
+ * organization, so there's no DEK to route it through in the first place.
+ */
+export function encryptWithMasterKey(
+  plaintext: string,
+): { wrapped: Uint8Array<ArrayBuffer>; nonce: Uint8Array<ArrayBuffer> } {
+  const { ciphertext, nonce, authTag } = encryptWithKey(
+    getMasterKey(),
+    Buffer.from(plaintext, "utf8"),
+  );
+  return {
+    wrapped: toBytes(Buffer.concat([ciphertext, authTag])),
+    nonce: toBytes(nonce),
+  };
+}
+
+export function decryptWithMasterKey(wrapped: Uint8Array, nonce: Uint8Array): string {
+  const authTag = wrapped.subarray(wrapped.length - AUTH_TAG_LENGTH);
+  const ciphertext = wrapped.subarray(0, wrapped.length - AUTH_TAG_LENGTH);
+  return decryptWithKey(getMasterKey(), { ciphertext, nonce, authTag }).toString("utf8");
+}

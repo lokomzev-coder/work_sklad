@@ -31,7 +31,7 @@ export function CustomFieldsSection({ defs, values }: CustomFieldsSectionProps) 
                 <div className="flex h-9 items-center">
                   <Checkbox id={name} name={name} defaultChecked={value === "true"} />
                 </div>
-              ) : def.type === "SELECT" ? (
+              ) : def.type === "SELECT" || def.type === "CUSTOM_ENTITY" ? (
                 <Select
                   name={name}
                   defaultValue={value || undefined}

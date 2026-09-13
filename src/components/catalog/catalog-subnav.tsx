@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface CatalogSubnavProps {
   org: string;
-  active: "catalog" | "groups" | "units" | "characteristics";
+  active: "catalog" | "groups" | "units" | "characteristics" | "price-list";
 }
 
 const TABS = [
@@ -11,6 +11,7 @@ const TABS = [
   { key: "groups", label: "Группы", href: "/groups" },
   { key: "units", label: "Единицы измерения", href: "/units" },
   { key: "characteristics", label: "Характеристики", href: "/characteristics" },
+  { key: "price-list", label: "Прайс-лист", href: "/price-list" },
 ] as const;
 
 export function CatalogSubnav({ org, active }: CatalogSubnavProps) {

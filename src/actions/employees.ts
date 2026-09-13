@@ -9,6 +9,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import { employeeSchema } from "@/lib/validation/employee";
 import { archiveOrDelete } from "@/lib/archive";
+import { checkEmployeeLimit } from "@/lib/subscription";
 
 export interface ActionResult {
   error?: string;
@@ -24,7 +25,7 @@ const newAccessSchema = z.object({
   login: z.string().trim().toLowerCase().regex(LOGIN_REGEX, "Логин: латиница/цифры, без пробелов и @"),
   accessEmail: z.email("Некорректный email для входа"),
   password: z.string().trim().min(8, "Пароль: минимум 8 символов").max(200),
-  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION"]),
+  role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION", "CASHIER"]),
   customRoleId: z.string().optional(),
 });
 
@@ -68,6 +69,11 @@ export async function createEmployee(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "employees", "create");
+
+  const limitCheck = await checkEmployeeLimit(ctx.orgId);
+  if (!limitCheck.ok) {
+    return { error: limitCheck.error };
+  }
 
   const parsed = parseEmployeeForm(formData);
   if (!parsed.success) {

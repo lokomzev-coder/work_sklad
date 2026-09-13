@@ -5,8 +5,8 @@ import type { OrgContext } from "@/lib/tenant";
 
 /** The only resources with a real per-row `assignedEmployeeId` owner — see
  * SCOPED_RESOURCES in lib/permissions.ts (kept as a separate, narrower type
- * here so OWNER_LOOKUP below is exhaustive over exactly these four). */
-export type ScopedResource = "orders" | "purchaseOrders" | "productionOrders" | "clients";
+ * here so OWNER_LOOKUP below is exhaustive over exactly these five). */
+export type ScopedResource = "orders" | "purchaseOrders" | "productionOrders" | "clients" | "tasks";
 
 const OWNER_LOOKUP: Record<
   ScopedResource,
@@ -18,6 +18,7 @@ const OWNER_LOOKUP: Record<
   productionOrders: (id, orgId) =>
     prisma.productionOrder.findFirst({ where: { id, orgId }, select: { assignedEmployeeId: true } }),
   clients: (id, orgId) => prisma.client.findFirst({ where: { id, orgId }, select: { assignedEmployeeId: true } }),
+  tasks: (id, orgId) => prisma.task.findFirst({ where: { id, orgId }, select: { assignedEmployeeId: true } }),
 };
 
 /** Memoized per-request (React `cache()`, Next 16 Server Components) — a

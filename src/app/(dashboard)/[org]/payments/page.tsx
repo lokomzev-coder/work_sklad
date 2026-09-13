@@ -17,6 +17,7 @@ import { statusBadgeClass } from "@/lib/status-color";
 import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { PaymentsSubnav } from "@/components/payments/payments-subnav";
 
 export default async function PaymentsPage({
   params,
@@ -37,6 +38,7 @@ export default async function PaymentsPage({
 
   return (
     <div className="flex flex-col gap-4">
+      <PaymentsSubnav org={org} active="payments" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Платежи</h1>
         {canCreate && (

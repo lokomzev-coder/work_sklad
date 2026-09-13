@@ -28,7 +28,7 @@ export default async function ProfilePage({
     ctx.employeeId
       ? prisma.employee.findFirst({
           where: { id: ctx.employeeId },
-          select: { defaultStoreId: true, defaultLegalEntityId: true },
+          select: { defaultStoreId: true, defaultLegalEntityId: true, openPdfInBrowser: true },
         })
       : null,
   ]);
@@ -49,6 +49,7 @@ export default async function ProfilePage({
           defaultValues={{
             defaultStoreId: employeeDefaults?.defaultStoreId ?? null,
             defaultLegalEntityId: employeeDefaults?.defaultLegalEntityId ?? null,
+            openPdfInBrowser: employeeDefaults?.openPdfInBrowser ?? false,
           }}
         />
       )}

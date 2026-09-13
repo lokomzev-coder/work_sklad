@@ -2,12 +2,15 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOrgContext } from "@/lib/tenant";
 import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { logoutAction } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { SidebarProvider, SidebarShell, MobileSidebarTrigger } from "@/components/layout/sidebar-shell";
 import { CommandPalette } from "@/components/layout/command-palette";
 import { PageBreadcrumb } from "@/components/layout/page-breadcrumb";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { NotificationBell } from "@/components/layout/notification-bell";
+import { SubscriptionStateBanner } from "@/components/layout/subscription-state-banner";
 
 export default async function OrgLayout({
   children,
@@ -24,8 +27,18 @@ export default async function OrgLayout({
   if (ctx.role === "PRODUCTION") {
     redirect(`/${org}/floor`);
   }
+  // Block E: same idea for CASHIER — but unlike PRODUCTION, ADMIN is never
+  // excluded from /kassa (see that layout's gate), so this redirect only
+  // ever fires for the CASHIER role itself, never for ADMIN checking the
+  // kassa view — ADMIN reaches both this dashboard and /kassa freely.
+  if (ctx.role === "CASHIER") {
+    redirect(`/${org}/kassa`);
+  }
   const session = await auth();
   const memberships = session?.memberships ?? [];
+  const unreadNotificationCount = await prisma.notification.count({
+    where: { orgId: ctx.orgId, userId: ctx.userId, readAt: null },
+  });
 
   return (
     <SidebarProvider>
@@ -39,6 +52,7 @@ export default async function OrgLayout({
             </div>
             <CommandPalette orgSlug={org} />
             <div className="flex items-center gap-2">
+              <NotificationBell orgSlug={org} initialUnreadCount={unreadNotificationCount} />
               <ThemeToggle />
               <span className="hidden text-sm text-muted-foreground sm:inline">
                 Роль: {ctx.role}
@@ -53,6 +67,9 @@ export default async function OrgLayout({
               </form>
             </div>
           </header>
+          {ctx.subscriptionState.kind !== "ACTIVE" && (
+            <SubscriptionStateBanner org={org} role={ctx.role} state={ctx.subscriptionState} />
+          )}
           <main className="flex-1 bg-muted/30 p-4 sm:p-6">{children}</main>
         </div>
       </div>

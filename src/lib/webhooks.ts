@@ -115,6 +115,32 @@ async function deliverAndRecord(
   });
 }
 
+/**
+ * Block K (scenarios): delivers to ONE specific webhook (the one a
+ * scenario's SEND_WEBHOOK action names), not every subscriber of an event
+ * like dispatchWebhookEvent above. Reuses deliverAndRecord so this lands in
+ * the exact same WebhookDelivery log/retry queue as ordinary webhook
+ * traffic — a scenario-triggered delivery that fails gets picked up by the
+ * same retryPendingDeliveries()/cron route for free. Fire-and-forget for
+ * the same reason dispatchWebhookEvent is: an outbound HTTP call must never
+ * stall the Server Action that triggered the scenario.
+ */
+export function deliverToWebhookNow(
+  orgId: string,
+  webhookId: string,
+  event: WebhookEvent,
+  payload: Record<string, unknown>,
+): void {
+  void (async () => {
+    const webhook = await prisma.webhook.findFirst({
+      where: { id: webhookId, orgId, isActive: true },
+    });
+    if (!webhook) return;
+    const body = { event, payload, timestamp: new Date().toISOString() };
+    await deliverAndRecord(webhook.id, webhook.url, webhook.secret, event, JSON.stringify(body), body);
+  })();
+}
+
 export interface RetryResult {
   attempted: number;
   succeeded: number;

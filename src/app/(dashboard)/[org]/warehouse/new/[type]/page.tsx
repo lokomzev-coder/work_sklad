@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission, can } from "@/lib/permissions";
 import { getStockBalances } from "@/lib/stock";
+import { variantLabel } from "@/lib/catalog-variants";
 import { MovementForm, type ManualMovementType } from "@/components/warehouse/movement-form";
 
 const TYPES: Record<string, ManualMovementType> = {
@@ -42,14 +43,20 @@ export default async function NewMovementPage({
     prisma.catalogItem.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE", type: "PRODUCT" },
       orderBy: { name: "asc" },
+      include: {
+        variants: {
+          where: { status: "ACTIVE" },
+          include: { values: { include: { characteristic: true } } },
+        },
+      },
     }),
-    getStockBalances(ctx.orgId),
+    getStockBalances(ctx.orgId, { byVariant: true }),
   ]);
 
   const balanceMap: Record<string, Record<string, number>> = {};
   for (const row of balances) {
     balanceMap[row.storeId] ??= {};
-    balanceMap[row.storeId][row.catalogItemId] = Number(row.quantity);
+    balanceMap[row.storeId][`${row.catalogItemId}:${row.variantId ?? ""}`] = Number(row.quantity);
   }
 
   return (
@@ -60,7 +67,14 @@ export default async function NewMovementPage({
         type={type}
         storeOptions={stores.map((s) => ({ value: s.id, label: s.name }))}
         defaultStoreId={ctx.defaultStoreId}
-        catalogOptions={catalogItems.map((c) => ({ value: c.id, label: c.name }))}
+        catalogOptions={catalogItems.map((c) => ({
+          id: c.id,
+          name: c.name,
+          variants: c.variants.map((v) => ({
+            id: v.id,
+            label: variantLabel(v.values) || (v.sku ?? v.id),
+          })),
+        }))}
         balances={balanceMap}
       />
     </div>

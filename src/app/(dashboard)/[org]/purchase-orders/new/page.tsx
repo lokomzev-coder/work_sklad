@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { PurchaseOrderForm } from "@/components/purchase-orders/purchase-order-form";
+import { variantLabel } from "@/lib/catalog-variants";
 import { listCustomFieldDefinitions } from "@/lib/custom-fields";
 
 export default async function NewPurchaseOrderPage({
@@ -23,6 +24,12 @@ export default async function NewPurchaseOrderPage({
     prisma.catalogItem.findMany({
       where: { orgId: ctx.orgId, status: "ACTIVE" },
       orderBy: { name: "asc" },
+      include: {
+        variants: {
+          where: { status: "ACTIVE" },
+          include: { values: { include: { characteristic: true } } },
+        },
+      },
     }),
     prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
     prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
@@ -42,6 +49,10 @@ export default async function NewPurchaseOrderPage({
           name: c.name,
           unitPrice: c.unitPrice.toString(),
           currency: c.currency,
+          variants: c.variants.map((v) => ({
+            id: v.id,
+            label: variantLabel(v.values) || (v.sku ?? v.id),
+          })),
         }))}
         contractOptions={contracts.map((c) => ({ value: c.id, label: `№${c.number}` }))}
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}

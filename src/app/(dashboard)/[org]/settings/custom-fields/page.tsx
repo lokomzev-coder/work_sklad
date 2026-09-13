@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { listCustomFieldDefinitions } from "@/lib/custom-fields";
@@ -28,6 +29,11 @@ export default async function CustomFieldsPage({
   const defsBySection = await Promise.all(
     SECTIONS.map((s) => listCustomFieldDefinitions(ctx.orgId, s.entityType)),
   );
+  const customEntityTypes = await prisma.customEntityType.findMany({
+    where: { orgId: ctx.orgId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
+  });
 
   return (
     <div className="flex flex-col gap-6">
@@ -36,7 +42,9 @@ export default async function CustomFieldsPage({
         <h1 className="text-2xl font-semibold">Дополнительные поля</h1>
         <p className="text-sm text-muted-foreground">
           Добавьте свои поля к клиентам, товарам/услугам, заказам и заказам поставщику — они
-          появятся на карточке сразу после создания.
+          появятся на карточке сразу после создания. Тип «Справочник» берёт варианты из
+          настраиваемого списка на вкладке «Справочники» — удобно, если один и тот же набор
+          значений (например, бренды) нужен сразу в нескольких полях.
         </p>
       </div>
 
@@ -47,6 +55,7 @@ export default async function CustomFieldsPage({
             orgSlug={org}
             entityType={section.entityType}
             defs={defsBySection[i]}
+            customEntityTypes={customEntityTypes}
           />
         </div>
       ))}

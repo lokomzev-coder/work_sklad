@@ -38,6 +38,12 @@ function Label({ item, showPrices }: { item: LabelItem; showPrices: boolean }) {
         height: 32,
         margin: 4,
       });
+      // Block M4 phase B: the server-side PDF renderer navigates here
+      // headlessly and must wait for this synchronous-but-still-post-paint
+      // draw to finish before calling page.pdf() — it polls for the absence
+      // of any [data-barcode]:not([data-rendered]) element (api/print/pdf's
+      // route). Set only after JsBarcode has actually drawn into the SVG.
+      svgRef.current.dataset.rendered = "true";
     }
   }, [item.barcode]);
 
@@ -45,7 +51,7 @@ function Label({ item, showPrices }: { item: LabelItem; showPrices: boolean }) {
     <div className="flex flex-col items-center justify-center gap-1 break-inside-avoid border border-gray-300 p-2 text-center text-black">
       <div className="text-xs font-medium leading-tight">{item.name}</div>
       {item.barcode ? (
-        <svg ref={svgRef} />
+        <svg ref={svgRef} data-barcode />
       ) : (
         <div className="text-[10px] text-gray-400">без штрихкода</div>
       )}

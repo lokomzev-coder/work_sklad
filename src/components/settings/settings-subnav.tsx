@@ -3,15 +3,24 @@ import { cn } from "@/lib/utils";
 
 interface SettingsSubnavProps {
   org: string;
-  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "webhooks" | "roles" | "groups";
+  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "custom-entities" | "webhooks" | "api-keys" | "audit-log" | "price-types" | "discounts" | "expense-items" | "scenarios" | "import" | "roles" | "groups" | "subscription";
 }
 
 const TABS = [
+  { key: "subscription", label: "Подписка", href: "/subscription" },
   { key: "legal-entities", label: "Юрлица", href: "/legal-entities" },
   { key: "statuses", label: "Статусы документов", href: "/statuses" },
   { key: "currencies", label: "Валюта", href: "/currencies" },
   { key: "custom-fields", label: "Доп. поля", href: "/custom-fields" },
+  { key: "custom-entities", label: "Справочники", href: "/custom-entities" },
+  { key: "price-types", label: "Типы цен", href: "/price-types" },
+  { key: "discounts", label: "Скидки", href: "/discounts" },
+  { key: "expense-items", label: "Статьи расходов", href: "/expense-items" },
   { key: "webhooks", label: "Вебхуки", href: "/webhooks" },
+  { key: "api-keys", label: "API-ключи", href: "/api-keys" },
+  { key: "audit-log", label: "Журнал изменений", href: "/audit-log" },
+  { key: "scenarios", label: "Сценарии", href: "/scenarios" },
+  { key: "import", label: "Импорт", href: "/import" },
   { key: "roles", label: "Роли доступа", href: "/roles" },
   { key: "groups", label: "Отделы", href: "/groups" },
 ] as const;

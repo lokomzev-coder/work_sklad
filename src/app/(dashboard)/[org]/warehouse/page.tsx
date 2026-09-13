@@ -30,6 +30,8 @@ const TYPE_LABEL: Record<string, string> = {
   SUPPLY: "Приёмка",
   SALES_RETURN: "Возврат от клиента",
   PURCHASE_RETURN: "Возврат поставщику",
+  RETAIL_SALE: "Розничная продажа",
+  RETAIL_RETURN: "Розничный возврат",
 };
 
 export default async function WarehouseMovementsPage({
@@ -103,6 +105,11 @@ export default async function WarehouseMovementsPage({
                   </TableCell>
                   <TableCell>
                     <Badge variant="secondary">{TYPE_LABEL[m.type]}</Badge>
+                    {!m.isPosted && (
+                      <Badge variant="secondary" className="ml-1">
+                        Черновик
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell>
                     {m.type === "MOVE"

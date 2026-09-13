@@ -9,6 +9,7 @@ import { getClientBalance } from "@/lib/balances";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientContactsSection } from "@/components/clients/client-contacts-section";
 import { ClientAddressesSection } from "@/components/clients/client-addresses-section";
+import { CounterpartyAdjustmentsSection } from "@/components/clients/counterparty-adjustments-section";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
 import { formatMoney } from "@/lib/format";
 
@@ -42,9 +43,10 @@ export default async function EditClientPage({
     where: { clientId: client.id },
     orderBy: { label: "asc" },
   });
-  const [customFieldDefs, customFieldValues] = await Promise.all([
+  const [customFieldDefs, customFieldValues, adjustments] = await Promise.all([
     listCustomFieldDefinitions(ctx.orgId, "CLIENT"),
     getCustomFieldValues(client.id),
+    prisma.counterpartyAdjustment.findMany({ where: { orgId: ctx.orgId, clientId: client.id }, orderBy: { createdAt: "desc" } }),
   ]);
 
   return (
@@ -77,6 +79,18 @@ export default async function EditClientPage({
       )}
       <ClientContactsSection orgSlug={org} clientId={client.id} contacts={contacts} />
       <ClientAddressesSection orgSlug={org} clientId={client.id} addresses={addresses} />
+      <CounterpartyAdjustmentsSection
+        orgSlug={org}
+        clientId={client.id}
+        baseCurrency={balance.baseCurrency}
+        adjustments={adjustments.map((a) => ({
+          id: a.id,
+          side: a.side,
+          amount: a.amount.toString(),
+          comment: a.comment,
+          createdAt: a.createdAt.toISOString(),
+        }))}
+      />
     </div>
   );
 }

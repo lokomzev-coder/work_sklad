@@ -13,6 +13,10 @@ import { ProductionOrderCompletePanel } from "@/components/production/production
 import { ProductionStagesPanel } from "@/components/production/production-stages-panel";
 import { ProductionOrderHistory } from "@/components/production/production-order-history";
 import { PrintDialog } from "@/components/print/print-dialog";
+import { getComments } from "@/lib/comments";
+import { EventFeed } from "@/components/comments/event-feed";
+import { listAttachments } from "@/lib/attachments";
+import { AttachmentList } from "@/components/attachments/attachment-list";
 
 export default async function ProductionOrderDetailPage({
   params,
@@ -42,6 +46,9 @@ export default async function ProductionOrderDetailPage({
   if (!(await isRowVisible(ctx, "productionOrders", productionOrder.assignedEmployeeId))) {
     notFound();
   }
+
+  const comments = await getComments(ctx.orgId, "ProductionOrder", productionOrder.id, ctx.employeeId);
+  const attachments = await listAttachments(ctx.orgId, "ProductionOrder", productionOrder.id);
 
   const isStaged = !!productionOrder.techCard.techProcessId;
 
@@ -138,7 +145,12 @@ export default async function ProductionOrderDetailPage({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Задание №{productionOrder.number}</h1>
         <div className="flex items-center gap-2">
-          <PrintDialog documentType="productionOrder" orgSlug={org} documentId={productionOrder.id} />
+          <PrintDialog
+            documentType="productionOrder"
+            orgSlug={org}
+            documentId={productionOrder.id}
+            openPdfInBrowser={ctx.openPdfInBrowser}
+          />
           <ProductionOrderStatusSelect
             orgSlug={org}
             productionOrderId={productionOrder.id}
@@ -201,6 +213,20 @@ export default async function ProductionOrderDetailPage({
       )}
 
       {movements.length > 0 && <ProductionOrderHistory movements={movements} />}
+      <AttachmentList
+        orgSlug={org}
+        entityType="ProductionOrder"
+        entityId={productionOrder.id}
+        revalidateHref={`/${org}/production/${productionOrder.id}`}
+        attachments={attachments}
+      />
+      <EventFeed
+        orgSlug={org}
+        entityType="ProductionOrder"
+        entityId={productionOrder.id}
+        revalidateHref={`/${org}/production/${productionOrder.id}`}
+        comments={comments}
+      />
     </div>
   );
 }

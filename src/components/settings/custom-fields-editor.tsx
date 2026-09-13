@@ -43,7 +43,7 @@ export function CustomFieldsEditor({ defs, values, onChange }: CustomFieldsEdito
                     onCheckedChange={(checked) => onChange(def.id, checked === true ? "true" : "false")}
                   />
                 </div>
-              ) : def.type === "SELECT" ? (
+              ) : def.type === "SELECT" || def.type === "CUSTOM_ENTITY" ? (
                 <Select
                   value={value || EMPTY_VALUE}
                   items={{ [EMPTY_VALUE]: "—", ...Object.fromEntries(def.options.map((o) => [o, o])) }}

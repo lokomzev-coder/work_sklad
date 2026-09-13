@@ -18,7 +18,7 @@ export interface ClientBalance {
  * Amounts are converted to the org's base currency (lib/currency.ts).
  */
 export async function getClientBalance(orgId: string, clientId: string): Promise<ClientBalance> {
-  const [orders, paymentsIn, purchaseOrders, paymentsOut, baseCurrency, rates] = await Promise.all([
+  const [orders, paymentsIn, purchaseOrders, paymentsOut, baseCurrency, rates, adjustments] = await Promise.all([
     prisma.order.findMany({ where: { orgId, clientId }, include: { lineItems: true } }),
     prisma.payment.findMany({
       where: { orgId, counterpartyId: clientId, direction: "IN" },
@@ -34,6 +34,11 @@ export async function getClientBalance(orgId: string, clientId: string): Promise
     }),
     getOrgBaseCurrency(orgId),
     getLatestRates(orgId),
+    // Block O phase 6: manual corrections (debt forgiveness, opening-balance
+    // migration) — see CounterpartyAdjustment's schema comment. Assumed
+    // already in base currency (no currency field on the model — same
+    // simplification as the rest of this "minimal ledger" file's todos).
+    prisma.counterpartyAdjustment.findMany({ where: { orgId, clientId }, select: { side: true, amount: true } }),
   ]);
 
   // orderedTotal/purchasedTotal (OrderLineItem/PurchaseOrderLineItem-based)
@@ -62,9 +67,16 @@ export async function getClientBalance(orgId: string, clientId: string): Promise
     0,
   );
 
+  const receivableAdjustments = adjustments
+    .filter((a) => a.side === "RECEIVABLE")
+    .reduce((sum, a) => sum + Number(a.amount), 0);
+  const payableAdjustments = adjustments
+    .filter((a) => a.side === "PAYABLE")
+    .reduce((sum, a) => sum + Number(a.amount), 0);
+
   return {
-    receivable: orderedTotal - paymentsInTotal,
-    payable: purchasedTotal - paymentsOutTotal,
+    receivable: orderedTotal - paymentsInTotal - receivableAdjustments,
+    payable: purchasedTotal - paymentsOutTotal - payableAdjustments,
     baseCurrency,
   };
 }

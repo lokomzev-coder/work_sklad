@@ -28,6 +28,10 @@ interface VariantRow {
   sku: string | null;
   barcode: string | null;
   priceOverride: string | null;
+  // Block M6: summed stock across all stores, undefined when the caller
+  // didn't fetch it (kept optional so this component stays usable without
+  // always paying for a balances query).
+  stock?: number;
 }
 
 interface VariantsEditorProps {
@@ -84,6 +88,8 @@ export function VariantsEditor({
     return () => deleteCatalogVariant(orgSlug, catalogItemId, variantId);
   }
 
+  const showStock = variants.some((v) => v.stock !== undefined);
+
   if (characteristics.length === 0) {
     return (
       <Card>
@@ -115,6 +121,7 @@ export function VariantsEditor({
                   <TableHead>Артикул</TableHead>
                   <TableHead>Штрихкод</TableHead>
                   <TableHead className="text-right">Цена</TableHead>
+                  {showStock && <TableHead className="text-right">Остаток</TableHead>}
                   <TableHead className="w-0" />
                 </TableRow>
               </TableHeader>
@@ -125,6 +132,9 @@ export function VariantsEditor({
                     <TableCell>{v.sku ?? "—"}</TableCell>
                     <TableCell>{v.barcode ?? "—"}</TableCell>
                     <TableCell className="text-right">{v.priceOverride ?? "—"}</TableCell>
+                    {showStock && (
+                      <TableCell className="text-right">{v.stock ?? "—"}</TableCell>
+                    )}
                     <TableCell className="text-right">
                       <SimpleDeleteButton
                         onDelete={handleDelete(v.id)}

@@ -10,6 +10,7 @@ import type { StockMovementType } from "@/generated/prisma/enums";
 
 const lineSchema = z.object({
   catalogItemId: z.string().min(1),
+  variantId: z.string().min(1).nullable().optional(),
   quantity: z.coerce.number("Укажите количество"),
 });
 
@@ -29,7 +30,7 @@ export interface CreateStockMovementInput {
   storeId: string;
   toStoreId?: string | null;
   comment?: string;
-  lines: { catalogItemId: string; quantity: number }[];
+  lines: { catalogItemId: string; variantId?: string | null; quantity: number }[];
 }
 
 export interface CreateStockMovementResult {
@@ -103,8 +104,25 @@ export async function createStockMovement(
     return { error: "Один из товаров не найден" };
   }
 
+  const variantIds = [...new Set(data.lines.map((l) => l.variantId).filter((v): v is string => !!v))];
+  if (variantIds.length > 0) {
+    const variants = await prisma.catalogItemVariant.findMany({
+      where: { id: { in: variantIds } },
+      select: { id: true, catalogItemId: true },
+    });
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+    for (const line of data.lines) {
+      if (!line.variantId) continue;
+      const variant = variantById.get(line.variantId);
+      if (!variant || variant.catalogItemId !== line.catalogItemId) {
+        return { error: "Модификация не найдена" };
+      }
+    }
+  }
+
   let linesCreateData: {
     catalogItemId: string;
+    variantId?: string | null;
     quantity: number;
     countedQuantity?: number;
   }[];
@@ -116,9 +134,11 @@ export async function createStockMovement(
           ctx.orgId,
           data.storeId,
           line.catalogItemId,
+          line.variantId ?? null,
         );
         return {
           catalogItemId: line.catalogItemId,
+          variantId: line.variantId ?? undefined,
           quantity: line.quantity - currentBalance,
           countedQuantity: line.quantity,
         };
@@ -127,6 +147,7 @@ export async function createStockMovement(
   } else {
     linesCreateData = data.lines.map((line) => ({
       catalogItemId: line.catalogItemId,
+      variantId: line.variantId ?? undefined,
       quantity: line.quantity,
     }));
   }

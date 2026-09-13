@@ -8,8 +8,9 @@ export default async function OrgSelectPage() {
   if (!session?.user) {
     redirect("/login");
   }
+  const memberships = session.memberships ?? [];
 
-  if (session.memberships.length === 0) {
+  if (memberships.length === 0) {
     return (
       <div className="mx-auto flex max-w-sm flex-col items-center gap-4 p-10 text-center">
         <h1 className="text-xl font-semibold">Нет организаций</h1>
@@ -24,7 +25,7 @@ export default async function OrgSelectPage() {
   return (
     <div className="mx-auto flex max-w-sm flex-col gap-4 p-10">
       <h1 className="text-xl font-semibold">Выберите организацию</h1>
-      {session.memberships.map((m) => (
+      {memberships.map((m) => (
         <Link key={m.orgId} href={m.role === "PRODUCTION" ? `/${m.orgSlug}/floor` : `/${m.orgSlug}`}>
           <Card className="transition-colors hover:bg-accent">
             <CardHeader>

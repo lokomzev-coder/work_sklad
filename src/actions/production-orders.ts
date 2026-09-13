@@ -11,6 +11,7 @@ import { getStockBalances } from "@/lib/stock";
 import { getLastPurchaseUnitCosts } from "@/lib/production-cost";
 import { computeStageProgress } from "@/lib/production-stages";
 import { dispatchWebhookEvent } from "@/lib/webhooks";
+import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const upsertProductionOrderSchema = z.object({
@@ -192,7 +193,9 @@ export async function upsertProductionOrder(
   revalidatePath(`/${orgSlug}/production`);
   revalidatePath(`/${orgSlug}/production/${productionOrderIdResult}`);
   if (isNewOrder) {
-    dispatchWebhookEvent(ctx.orgId, "PRODUCTION_ORDER_CREATED", { productionOrderId: productionOrderIdResult });
+    await notifyDocumentEvent(
+      ctx.orgId, "PRODUCTION_ORDER_CREATED", { productionOrderId: productionOrderIdResult }, "PRODUCTION_ORDER", "CREATED", productionOrderIdResult,
+    );
   }
   return { productionOrderId: productionOrderIdResult };
 }
@@ -239,7 +242,9 @@ export async function updateProductionOrderStatus(
 
   revalidatePath(`/${orgSlug}/production`);
   revalidatePath(`/${orgSlug}/production/${productionOrderId}`);
-  dispatchWebhookEvent(ctx.orgId, "PRODUCTION_ORDER_STATUS_CHANGED", { productionOrderId, statusId });
+  await notifyDocumentEvent(
+    ctx.orgId, "PRODUCTION_ORDER_STATUS_CHANGED", { productionOrderId, statusId }, "PRODUCTION_ORDER", "STATUS_CHANGED", productionOrderId,
+  );
 }
 
 /**

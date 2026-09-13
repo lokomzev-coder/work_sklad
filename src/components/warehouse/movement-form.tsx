@@ -14,19 +14,37 @@ import { createStockMovement } from "@/actions/stock-movements";
 // from the Order/PurchaseOrder detail pages, not through this generic form.
 export type ManualMovementType = "ENTER" | "LOSS" | "MOVE" | "INVENTORY";
 
+interface VariantOption {
+  id: string;
+  label: string;
+}
+
+export interface MovementCatalogOption {
+  id: string;
+  name: string;
+  variants: VariantOption[];
+}
+
 interface LineRow {
   key: string;
   catalogItemId: string | null;
+  variantId: string | null;
   quantity: string;
+}
+
+// Block M6: composite key for the balances lookup — mirrors the same idiom
+// used server-side in actions/fulfillment.ts and actions/stock-movements.ts.
+function lineKey(catalogItemId: string, variantId: string | null): string {
+  return `${catalogItemId}:${variantId ?? ""}`;
 }
 
 interface MovementFormProps {
   orgSlug: string;
   type: ManualMovementType;
   storeOptions: ComboboxOption[];
-  catalogOptions: ComboboxOption[];
-  /** storeId -> catalogItemId -> current balance, used to show a live
-   * reference next to the "actual count" input on inventory documents. */
+  catalogOptions: MovementCatalogOption[];
+  /** storeId -> "catalogItemId:variantId" -> current balance, used to show a
+   * live reference next to the "actual count" input on inventory documents. */
   balances: Record<string, Record<string, number>>;
   /** Block I2.2: pre-fills the source store with the acting employee's
    * default store, if they have one — just a convenience, still changeable. */
@@ -41,7 +59,7 @@ const TITLE: Record<ManualMovementType, string> = {
 };
 
 function newRow(): LineRow {
-  return { key: crypto.randomUUID(), catalogItemId: null, quantity: "" };
+  return { key: crypto.randomUUID(), catalogItemId: null, variantId: null, quantity: "" };
 }
 
 export function MovementForm({
@@ -59,6 +77,12 @@ export function MovementForm({
   const [toStoreId, setToStoreId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
   const [rows, setRows] = useState<LineRow[]>([newRow()]);
+
+  const catalogItemComboOptions: ComboboxOption[] = catalogOptions.map((c) => ({
+    value: c.id,
+    label: c.name,
+  }));
+  const catalogById = new Map(catalogOptions.map((c) => [c.id, c]));
 
   function updateRow(key: string, patch: Partial<LineRow>) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -82,7 +106,7 @@ export function MovementForm({
 
     const lines = rows
       .filter((r) => r.catalogItemId)
-      .map((r) => ({ catalogItemId: r.catalogItemId!, quantity: Number(r.quantity) }));
+      .map((r) => ({ catalogItemId: r.catalogItemId!, variantId: r.variantId, quantity: Number(r.quantity) }));
 
     if (lines.length === 0) {
       setError("Добавьте хотя бы одну позицию");
@@ -156,45 +180,60 @@ export function MovementForm({
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {rows.map((row) => {
-            const currentBalance =
-              row.catalogItemId && storeBalances[row.catalogItemId] !== undefined
-                ? storeBalances[row.catalogItemId]
-                : 0;
+            const item = row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined;
+            const key = row.catalogItemId ? lineKey(row.catalogItemId, row.variantId) : null;
+            const currentBalance = key && storeBalances[key] !== undefined ? storeBalances[key] : 0;
+            const variantOptions: ComboboxOption[] =
+              item?.variants.map((v) => ({ value: v.id, label: v.label })) ?? [];
+
             return (
-              <div key={row.key} className="flex items-end gap-2">
-                <div className="flex-1">
-                  <EntityCombobox
-                    options={catalogOptions}
-                    value={row.catalogItemId}
-                    onChange={(v) => updateRow(row.key, { catalogItemId: v })}
-                    placeholder="Выберите товар"
-                    emptyMessage="Ничего не найдено"
-                  />
+              <div key={row.key} className="flex flex-col gap-2 border-b pb-3 last:border-b-0 last:pb-0">
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <EntityCombobox
+                      options={catalogItemComboOptions}
+                      value={row.catalogItemId}
+                      onChange={(v) => updateRow(row.key, { catalogItemId: v, variantId: null })}
+                      placeholder="Выберите товар"
+                      emptyMessage="Ничего не найдено"
+                    />
+                  </div>
+                  {type === "INVENTORY" && row.catalogItemId && (
+                    <div className="w-32 shrink-0 text-right text-sm text-muted-foreground">
+                      Числится: {currentBalance}
+                    </div>
+                  )}
+                  <div className="w-32">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.001"
+                      placeholder={type === "INVENTORY" ? "Факт. кол-во" : "Кол-во"}
+                      value={row.quantity}
+                      onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={rows.length === 1}
+                    onClick={() => removeRow(row.key)}
+                  >
+                    Убрать
+                  </Button>
                 </div>
-                {type === "INVENTORY" && row.catalogItemId && (
-                  <div className="w-32 shrink-0 text-right text-sm text-muted-foreground">
-                    Числится: {currentBalance}
+                {variantOptions.length > 0 && (
+                  <div className="w-full sm:w-64">
+                    <EntityCombobox
+                      options={variantOptions}
+                      value={row.variantId}
+                      onChange={(v) => updateRow(row.key, { variantId: v })}
+                      placeholder="Выберите модификацию"
+                      emptyMessage="Модификации не найдены"
+                    />
                   </div>
                 )}
-                <div className="w-32">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.001"
-                    placeholder={type === "INVENTORY" ? "Факт. кол-во" : "Кол-во"}
-                    value={row.quantity}
-                    onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={rows.length === 1}
-                  onClick={() => removeRow(row.key)}
-                >
-                  Убрать
-                </Button>
               </div>
             );
           })}

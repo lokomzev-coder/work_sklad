@@ -7,9 +7,10 @@ export default async function Home() {
   if (!session?.user) {
     redirect("/login");
   }
+  const memberships = session.memberships ?? [];
 
-  if (session.memberships.length === 1) {
-    redirect(`/${session.memberships[0].orgSlug}`);
+  if (memberships.length === 1) {
+    redirect(`/${memberships[0].orgSlug}`);
   }
 
   redirect("/org-select");

@@ -1,4 +1,5 @@
 import type { Role } from "@/generated/prisma/enums";
+import type { SubscriptionState } from "@/lib/subscription";
 
 /**
  * Block I2.1 — full permission matrix (МойСклад-style). Replaces the old
@@ -24,6 +25,7 @@ export type Resource =
   | "reports"
   | "clients"
   | "catalog"
+  | "catalogImport"
   | "orders"
   | "purchaseOrders"
   | "invoicesOut"
@@ -43,7 +45,17 @@ export type Resource =
   | "webhooks"
   | "legalEntities"
   | "exchangeRates"
-  | "customRoles";
+  | "customRoles"
+  | "scenarios"
+  | "retail"
+  | "projects"
+  | "apiKeys"
+  | "auditLog"
+  | "priceTypes"
+  | "labelTemplates"
+  | "discounts"
+  | "tasks"
+  | "expenseItems";
 
 /** Only these resources have a real per-row owner (`assignedEmployeeId`) —
  * OWN/OWN_GROUP are meaningful exclusively for them. Every other resource's
@@ -54,6 +66,9 @@ export const SCOPED_RESOURCES: ReadonlySet<Resource> = new Set([
   "purchaseOrders",
   "productionOrders",
   "clients",
+  // Block O phase 5: Task.assignedToId is a real per-row owner, same as the
+  // resources above — OWN means "tasks assigned to me".
+  "tasks",
 ]);
 
 /** Never resolved from a CustomRole override — always the actor's base Role
@@ -69,11 +84,13 @@ const VIEW_ALL: ResourcePermission = { view: "ALL", create: false, edit: "NONE",
 
 function allResources(fill: ResourcePermission): Record<Resource, ResourcePermission> {
   const resources: Resource[] = [
-    "dashboard", "reports", "clients", "catalog",
+    "dashboard", "reports", "clients", "catalog", "catalogImport",
     "orders", "purchaseOrders", "invoicesOut", "invoicesIn", "contracts", "payments", "salesChannels",
     "warehouse", "techCards", "techProcesses", "productionOrders",
     "employees", "membership", "vault",
-    "documentStatuses", "customFields", "webhooks", "legalEntities", "exchangeRates", "customRoles",
+    "documentStatuses", "customFields", "webhooks", "legalEntities", "exchangeRates", "customRoles", "scenarios",
+    "retail", "projects", "apiKeys", "auditLog", "priceTypes", "discounts",
+    "tasks", "expenseItems", "labelTemplates",
   ];
   return Object.fromEntries(resources.map((r) => [r, fill])) as Record<Resource, ResourcePermission>;
 }
@@ -97,6 +114,13 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
     legalEntities: VIEW_ALL,
     exchangeRates: VIEW_ALL,
     customRoles: VIEW_ALL,
+    scenarios: VIEW_ALL,
+    // Block O: same "see but can't touch" tier as the other admin-only
+    // settings above — an API key grants full org-wide access (equivalent
+    // to ADMIN), so only ADMIN can generate/revoke one.
+    apiKeys: VIEW_ALL,
+    // Block O phase 3: same tier as apiKeys/webhooks/etc above.
+    auditLog: VIEW_ALL,
   },
   EMPLOYEE: {
     ...allResources(NONE_PERM),
@@ -110,6 +134,10 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
     // default should genuinely narrow.
     orders: ALL_PERM,
     purchaseOrders: ALL_PERM,
+    // Block O phase 5: a shared collaboration tool, not a sensitive lever
+    // like apiKeys/auditLog/priceTypes/discounts — every employee can see
+    // and manage tasks (their own or others'), same bucket as orders above.
+    tasks: ALL_PERM,
     // Block M5: same bucket as orders/purchaseOrders/payments — an invoice
     // is a side artifact of a document this role can already fully edit,
     // using money-recording capability it already has via `payments`, not a
@@ -119,6 +147,9 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
     contracts: ALL_PERM,
     payments: ALL_PERM,
     salesChannels: ALL_PERM,
+    // Order redesign: same bucket as contracts/salesChannels — an
+    // order-adjacent tag this role can already fully edit via `orders`.
+    projects: ALL_PERM,
     warehouse: VIEW_ALL, // legacy: warehouse "read"
     // legacy: production "read" gated techCards/techProcesses/productionOrders together.
     techCards: VIEW_ALL,
@@ -140,6 +171,17 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
     techCards: ALL_PERM,
     techProcesses: ALL_PERM,
     productionOrders: ALL_PERM,
+  },
+  // Block E: kassa-only role — locked to the /kassa interface (layout gates
+  // in (dashboard)/[org]/layout.tsx and (kassa)/[org]/kassa/layout.tsx),
+  // same pattern as PRODUCTION/floor. Unlike PRODUCTION, ADMIN is NOT
+  // excluded from /kassa (explicit user requirement — an org's admin/owner
+  // reaches every function, including the kassa interface) — that's a
+  // route-gate detail, not a capabilities-table one, since ADMIN already
+  // gets retail: ALL_PERM for free via its own allResources(ALL_PERM).
+  CASHIER: {
+    ...allResources(NONE_PERM),
+    retail: ALL_PERM,
   },
 };
 
@@ -233,6 +275,12 @@ export type Action = "view" | "create" | "edit" | "delete";
 
 interface CapabilitiesCtx {
   capabilities: Record<Resource, ResourcePermission>;
+  /** Блок Q — set by getOrgContext(). Optional here only so existing
+   * call sites/tests that construct a bare {capabilities} object don't
+   * need updating; assertPermission treats "not provided" the same as
+   * "not RESTRICTED" (never retroactively blocks a caller that doesn't
+   * know about subscriptions at all). */
+  subscriptionState?: SubscriptionState;
 }
 
 /**
@@ -254,6 +302,19 @@ export function assertPermission(
   action: Action,
   need: ScopeLevel = "OWN",
 ) {
+  // Блок Q — single choke point for the subscription gate: every
+  // create/edit/delete in the app already routes through this function
+  // (Block I), so the check lives here once instead of at every call site.
+  // "view" is deliberately exempt — a RESTRICTED org keeps read access,
+  // only mutations are blocked. Billing actions themselves (paying an
+  // invoice, topping up a balance) never call assertPermission at all —
+  // they gate on ctx.role === "ADMIN" directly, precisely so a RESTRICTED
+  // org can still pay its way out of RESTRICTED.
+  if (action !== "view" && ctx.subscriptionState?.kind === "RESTRICTED") {
+    throw new Error(
+      "Доступ к изменению данных ограничен — подписка не активна. Оформите тариф в Настройки → Подписка.",
+    );
+  }
   if (!can(ctx, resource, action, need)) {
     throw new Error(`Недостаточно прав: для "${resource}.${action}" требуется уровень "${need}"`);
   }

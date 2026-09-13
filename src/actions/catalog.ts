@@ -8,6 +8,7 @@ import { assertPermission } from "@/lib/permissions";
 import { catalogItemSchema } from "@/lib/validation/catalog";
 import { archiveOrDelete } from "@/lib/archive";
 import { saveCustomFieldValues } from "@/lib/custom-fields";
+import { generateEan13 } from "@/lib/barcode-generate";
 
 export interface ActionResult {
   error?: string;
@@ -24,6 +25,8 @@ function parseCatalogItemForm(formData: FormData) {
     currency: formData.get("currency") || "RUB",
     unitId: unitId === "__none__" ? "" : unitId,
     groupId: formData.get("groupId"),
+    taxRate: formData.get("taxRate") || "NONE",
+    minStock: formData.get("minStock"),
   });
 }
 
@@ -91,6 +94,7 @@ export async function updateCatalogItem(
       ...parsed.data,
       unitId: parsed.data.unitId ?? null,
       groupId: parsed.data.groupId ?? null,
+      minStock: parsed.data.minStock ?? null,
     },
   });
   await saveCustomFieldValues(ctx.orgId, "CATALOG_ITEM", itemId, formData);
@@ -131,4 +135,20 @@ export async function deleteCatalogItem(orgSlug: string, itemId: string) {
 
   revalidatePath(`/${orgSlug}/catalog`);
   return result;
+}
+
+/**
+ * Block R — fills the barcode field with a fresh, valid EAN-13 (real check
+ * digit, so real retail scanners accept it) instead of the caller inventing
+ * one by hand. Purely generates a value — doesn't write anything itself,
+ * the caller still has to submit the form/row it's filling for the value to
+ * actually persist. Gated the same as any other catalog edit, not "view",
+ * since it's only ever wired to an edit-time button.
+ */
+export async function generateBarcode(orgSlug: string): Promise<{ barcode: string } | ActionResult> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "catalog", "edit");
+
+  const barcode = await generateEan13(ctx.orgId);
+  return { barcode };
 }

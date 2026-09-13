@@ -13,8 +13,9 @@ export interface ActionResult {
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Введите название").max(60),
-  type: z.enum(["TEXT", "NUMBER", "DATE", "BOOLEAN", "SELECT"]),
+  type: z.enum(["TEXT", "NUMBER", "DATE", "BOOLEAN", "SELECT", "CUSTOM_ENTITY"]),
   options: z.string().optional(),
+  customEntityTypeId: z.string().optional(),
 });
 
 export async function createCustomFieldDefinition(
@@ -30,6 +31,7 @@ export async function createCustomFieldDefinition(
     name: formData.get("name"),
     type: formData.get("type"),
     options: formData.get("options"),
+    customEntityTypeId: formData.get("customEntityTypeId") || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
@@ -43,6 +45,18 @@ export async function createCustomFieldDefinition(
           .filter(Boolean)
       : [];
 
+  let customEntityTypeId: string | null = null;
+  if (parsed.data.type === "CUSTOM_ENTITY") {
+    if (!parsed.data.customEntityTypeId) {
+      return { error: "Выберите справочник" };
+    }
+    const entityDict = await prisma.customEntityType.findFirst({
+      where: { id: parsed.data.customEntityTypeId, orgId: ctx.orgId },
+    });
+    if (!entityDict) return { error: "Справочник не найден" };
+    customEntityTypeId = entityDict.id;
+  }
+
   const count = await prisma.customFieldDefinition.count({ where: { orgId: ctx.orgId, entityType } });
 
   try {
@@ -53,6 +67,7 @@ export async function createCustomFieldDefinition(
         name: parsed.data.name,
         type: parsed.data.type,
         options,
+        customEntityTypeId,
         position: count,
       },
     });

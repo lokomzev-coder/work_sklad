@@ -107,6 +107,7 @@ export async function updateOwnDefaults(
   const parsed = updateOwnDefaultsSchema.safeParse({
     defaultStoreId: formData.get("defaultStoreId") || null,
     defaultLegalEntityId: formData.get("defaultLegalEntityId") || null,
+    openPdfInBrowser: formData.get("openPdfInBrowser"),
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
@@ -128,6 +129,7 @@ export async function updateOwnDefaults(
     data: {
       defaultStoreId: parsed.data.defaultStoreId ?? null,
       defaultLegalEntityId: parsed.data.defaultLegalEntityId ?? null,
+      openPdfInBrowser: parsed.data.openPdfInBrowser ?? false,
     },
   });
 

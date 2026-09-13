@@ -16,6 +16,9 @@ import {
   Users,
   Settings,
   Factory,
+  Store,
+  Briefcase,
+  ListChecks,
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
@@ -68,6 +71,7 @@ interface GatedNavItem extends NavItem {
 const NAV_ITEMS: GatedNavItem[] = [
   { href: "", label: "Дашборд", icon: LayoutDashboard, group: "Обзор", resource: "dashboard" },
   { href: "/orders", label: "Заказы", icon: ShoppingCart, group: "Продажи", resource: "orders" },
+  { href: "/retail", label: "Розница", icon: Store, group: "Продажи", resource: "retail" },
   { href: "/invoices-out", label: "Счета покупателям", icon: Receipt, group: "Продажи", resource: "invoicesOut" },
   { href: "/clients", label: "Клиенты", icon: Contact, group: "Продажи", resource: "clients" },
   { href: "/catalog", label: "Товары и услуги", icon: Package, group: "Продажи", resource: "catalog" },
@@ -77,7 +81,9 @@ const NAV_ITEMS: GatedNavItem[] = [
   { href: "/production", label: "Производство", icon: Factory, group: "Снабжение и склад", resource: "productionOrders" },
   { href: "/payments", label: "Платежи", icon: Wallet, group: "Финансы", resource: "payments" },
   { href: "/contracts", label: "Договоры", icon: FileText, group: "Финансы", resource: "contracts" },
+  { href: "/projects", label: "Проекты", icon: Briefcase, group: "Финансы", resource: "projects" },
   { href: "/reports", label: "Отчёты", icon: BarChart3, group: "Финансы", resource: "reports" },
+  { href: "/tasks", label: "Задачи", icon: ListChecks, group: "Управление", resource: "tasks" },
   { href: "/employees", label: "Сотрудники", icon: Users, group: "Управление", resource: "employees" },
   // Vault ("Пароли") nav entry deliberately removed — the feature is hidden
   // for now (see (dashboard)/[org]/vault/layout.tsx), not deleted.

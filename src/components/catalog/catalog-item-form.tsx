@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,8 +18,9 @@ import {
   type ComboboxOption,
 } from "@/components/forms/entity-combobox";
 import { CustomFieldsSection } from "@/components/settings/custom-fields-section";
-import type { ActionResult } from "@/actions/catalog";
+import { generateBarcode, type ActionResult } from "@/actions/catalog";
 import type { CustomFieldDef } from "@/lib/custom-fields";
+import { TAX_RATE_LABELS } from "@/lib/tax-rate-labels";
 
 const initialState: ActionResult = {};
 const NONE_VALUE = "__none__";
@@ -44,6 +45,8 @@ interface CatalogItemFormProps {
     currency: string;
     unitId: string | null;
     groupId: string | null;
+    taxRate?: string;
+    minStock?: string | number | null;
   };
   submitLabel: string;
 }
@@ -62,6 +65,20 @@ export function CatalogItemForm({
   const [groupId, setGroupId] = useState<string | null>(
     defaultValues?.groupId ?? null,
   );
+  const barcodeRef = useRef<HTMLInputElement>(null);
+  const [isGeneratingBarcode, setIsGeneratingBarcode] = useState(false);
+
+  async function handleGenerateBarcode() {
+    setIsGeneratingBarcode(true);
+    try {
+      const result = await generateBarcode(orgSlug);
+      if ("barcode" in result && barcodeRef.current) {
+        barcodeRef.current.value = result.barcode;
+      }
+    } finally {
+      setIsGeneratingBarcode(false);
+    }
+  }
 
   return (
     <form action={formAction}>
@@ -104,11 +121,22 @@ export function CatalogItemForm({
             </div>
             <div className="flex flex-1 flex-col gap-2">
               <Label htmlFor="barcode">Штрихкод</Label>
-              <Input
-                id="barcode"
-                name="barcode"
-                defaultValue={defaultValues?.barcode ?? ""}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="barcode"
+                  name="barcode"
+                  ref={barcodeRef}
+                  defaultValue={defaultValues?.barcode ?? ""}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGenerateBarcode}
+                  disabled={isGeneratingBarcode}
+                >
+                  {isGeneratingBarcode ? "..." : "Сгенерировать"}
+                </Button>
+              </div>
             </div>
           </div>
           <div className="flex gap-4">
@@ -155,6 +183,37 @@ export function CatalogItemForm({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="flex w-40 flex-col gap-2">
+            <Label htmlFor="minStock">Мин. остаток</Label>
+            <Input
+              id="minStock"
+              name="minStock"
+              type="number"
+              step="0.001"
+              min="0"
+              placeholder="Не отслеживать"
+              defaultValue={defaultValues?.minStock?.toString() ?? ""}
+            />
+          </div>
+          <div className="flex w-64 flex-col gap-2">
+            <Label htmlFor="taxRate">Ставка НДС</Label>
+            <Select
+              name="taxRate"
+              items={TAX_RATE_LABELS}
+              defaultValue={defaultValues?.taxRate ?? "NONE"}
+            >
+              <SelectTrigger id="taxRate" className="w-full">
+                <SelectValue placeholder="Без НДС" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(TAX_RATE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col gap-2">
             <Label>Группа</Label>
