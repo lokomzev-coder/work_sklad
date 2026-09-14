@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptWithMasterKey } from "@/lib/crypto";
 import { checkAdminLoginRateLimit } from "@/lib/admin-rate-limit";
 import { getAdminBasePath } from "@/lib/admin-path";
+import { getClientIp } from "@/lib/request-ip";
 
 /**
  * Блок L — completely separate NextAuth instance for the developer/
@@ -25,7 +26,10 @@ import { getAdminBasePath } from "@/lib/admin-path";
  *   trips for an attacker to probe against, and no intermediate
  *   "password accepted" state to leak via timing/response differences.
  *
- * See middleware.ts (root) for the cheap perimeter check on `/admin/*`,
+ * See src/proxy.ts (Next.js 16 renamed the `middleware.ts` convention to
+ * `proxy.ts`, exporting `proxy` — a stale reference here to the old
+ * filename was flagged in an external review, 2026-09-13; this comment is
+ * now the corrected pointer) for the cheap perimeter check on `/admin/*`,
  * and lib/platform-auth.ts for the actual per-request context/capability
  * check every admin page and server action performs independently — the
  * session cookie alone is necessary but not sufficient.
@@ -37,12 +41,6 @@ class InvalidAdminCredentials extends CredentialsSignin {
 
 class AdminRateLimited extends CredentialsSignin {
   code = "rate_limited";
-}
-
-function getClientIp(request: Request | undefined): string {
-  const forwardedFor = request?.headers.get("x-forwarded-for");
-  if (forwardedFor) return forwardedFor.split(",")[0].trim();
-  return "unknown";
 }
 
 export const {

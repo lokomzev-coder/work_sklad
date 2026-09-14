@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertPublicWebhookUrl, UnsafeWebhookUrlError } from "@/lib/ssrf-guard";
 import type { WebhookEvent } from "@/generated/prisma/enums";
 
 export interface ActionResult {
@@ -31,6 +32,16 @@ export async function createWebhook(
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
+  }
+
+  // Security fix (external review, 2026-09-13): reject internal/private
+  // targets at save time — see lib/ssrf-guard.ts for why this is checked
+  // here AND again at every delivery attempt.
+  try {
+    await assertPublicWebhookUrl(parsed.data.url);
+  } catch (err) {
+    if (err instanceof UnsafeWebhookUrlError) return { error: err.message };
+    throw err;
   }
 
   await prisma.webhook.create({

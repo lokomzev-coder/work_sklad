@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import type { WebhookEvent } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
+import { assertPublicWebhookUrl, UnsafeWebhookUrlError } from "@/lib/ssrf-guard";
 
 const DELIVERY_TIMEOUT_MS = 5_000;
 
@@ -59,6 +60,19 @@ async function attemptHttpDelivery(
   secret: string,
   bodyStr: string,
 ): Promise<{ success: boolean; statusCode?: number; error?: string }> {
+  // Security fix (external review, 2026-09-13): re-checked at every
+  // delivery attempt, not just when the webhook URL was saved (actions/
+  // webhooks.ts) — a hostname's DNS record can change afterward. See
+  // lib/ssrf-guard.ts for what this does and its disclosed limitation.
+  try {
+    await assertPublicWebhookUrl(url);
+  } catch (err) {
+    if (err instanceof UnsafeWebhookUrlError) {
+      return { success: false, error: err.message };
+    }
+    throw err;
+  }
+
   const signature = createHmac("sha256", secret).update(bodyStr).digest("hex");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), DELIVERY_TIMEOUT_MS);
@@ -72,7 +86,20 @@ async function attemptHttpDelivery(
       },
       body: bodyStr,
       signal: controller.signal,
+      // Security fix (external review, 2026-09-13): never follow a
+      // redirect blindly — the SSRF check above only validated the
+      // configured URL, and a receiver that 3xx's could point anywhere,
+      // including a private address, on a completely separate request our
+      // guard never sees. A redirect response is treated as a failed
+      // delivery, not silently chased.
+      redirect: "manual",
     });
+    // With redirect: "manual", fetch resolves an "opaqueredirect" response
+    // for any 3xx instead of throwing — `res.ok`/`res.status` aren't
+    // meaningful on it, so treat it explicitly as a non-success.
+    if (res.type === "opaqueredirect") {
+      return { success: false, error: "Вебхук ответил редиректом — редиректы не выполняются" };
+    }
     return { success: res.ok, statusCode: res.status };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : "Unknown error" };

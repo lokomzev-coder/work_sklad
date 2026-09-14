@@ -9,6 +9,7 @@ import { archiveOrDelete, type ArchiveOrDeleteResult } from "@/lib/archive";
 import { getOrgDek } from "@/lib/org-dek";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { vaultEntrySchema } from "@/lib/validation/vault";
+import { canAccessVaultEntry } from "@/lib/vault-scope";
 
 export interface ActionResult {
   error?: string;
@@ -44,9 +45,19 @@ export async function createVaultEntry(
   const dek = await getOrgDek(ctx.orgId);
   const { ciphertext, nonce, authTag } = encryptSecret(dek, secret);
 
-  await prisma.vaultServiceEntry.create({
+  const entry = await prisma.vaultServiceEntry.create({
     data: { ...parsed.data, orgId: ctx.orgId, ciphertext, nonce, authTag },
   });
+
+  // Security fix (external review, 2026-09-13): once vault access is
+  // grant-scoped (OWN, see lib/permissions.ts's MANAGER default), a creator
+  // who isn't ADMIN would otherwise be unable to see the entry they just
+  // made until someone else granted it back to them. Auto-granting the
+  // creator closes that usability gap without weakening the fix — everyone
+  // ELSE still needs an explicit grant.
+  if (ctx.employeeId) {
+    await grantAccessRecord(ctx.orgId, ctx.employeeId, entry.id, ctx.userId);
+  }
 
   revalidatePath(`/${orgSlug}/vault`);
   redirect(`/${orgSlug}/vault`);
@@ -60,6 +71,9 @@ export async function updateVaultEntry(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "edit");
+  if (!(await canAccessVaultEntry(ctx, entryId, "edit"))) {
+    return { error: "Запись не найдена" };
+  }
 
   const parsed = parseVaultEntryForm(formData);
   if (!parsed.success) {
@@ -89,6 +103,9 @@ export async function updateVaultEntry(
 export async function archiveVaultEntry(orgSlug: string, entryId: string) {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "edit");
+  if (!(await canAccessVaultEntry(ctx, entryId, "edit"))) {
+    throw new Error("Запись не найдена");
+  }
 
   await prisma.vaultServiceEntry.update({
     where: { id: entryId, orgId: ctx.orgId },
@@ -101,6 +118,9 @@ export async function archiveVaultEntry(orgSlug: string, entryId: string) {
 export async function restoreVaultEntry(orgSlug: string, entryId: string) {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "edit");
+  if (!(await canAccessVaultEntry(ctx, entryId, "edit"))) {
+    throw new Error("Запись не найдена");
+  }
 
   await prisma.vaultServiceEntry.update({
     where: { id: entryId, orgId: ctx.orgId },
@@ -116,6 +136,9 @@ export async function deleteVaultEntry(
 ): Promise<ArchiveOrDeleteResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "delete");
+  if (!(await canAccessVaultEntry(ctx, entryId, "edit"))) {
+    return { reason: "Запись не найдена" };
+  }
 
   const result = await archiveOrDelete("vaultServiceEntry", entryId, ctx.orgId);
 
@@ -123,24 +146,18 @@ export async function deleteVaultEntry(
   return result;
 }
 
-export async function grantVaultAccess(
-  orgSlug: string,
-  vaultEntryId: string,
-  employeeId: string,
-) {
-  const ctx = await getOrgContext(orgSlug);
-  assertPermission(ctx, "vault", "create");
-
+/** Shared by grantVaultAccess and createVaultEntry's creator auto-grant —
+ * one EMPLOYEE_ACCESS tag per employee, reused across every entry they're
+ * granted access to, created lazily on first grant, never duplicated. */
+async function grantAccessRecord(orgId: string, employeeId: string, vaultEntryId: string, grantedById: string) {
   const employee = await prisma.employee.findFirstOrThrow({
-    where: { id: employeeId, orgId: ctx.orgId },
+    where: { id: employeeId, orgId },
   });
 
-  // One EMPLOYEE_ACCESS tag per employee, reused across every entry they're
-  // granted access to -- created lazily on first grant, never duplicated.
   const tag = await prisma.tag.upsert({
-    where: { orgId_name: { orgId: ctx.orgId, name: employee.fullName } },
+    where: { orgId_name: { orgId, name: employee.fullName } },
     create: {
-      orgId: ctx.orgId,
+      orgId,
       name: employee.fullName,
       kind: "EMPLOYEE_ACCESS",
       sourceEmployeeId: employee.id,
@@ -150,7 +167,7 @@ export async function grantVaultAccess(
 
   await prisma.employeeVaultAccess.upsert({
     where: { employeeId_vaultEntryId: { employeeId, vaultEntryId } },
-    create: { employeeId, vaultEntryId, grantedById: ctx.userId },
+    create: { employeeId, vaultEntryId, grantedById },
     update: {},
   });
 
@@ -159,6 +176,25 @@ export async function grantVaultAccess(
     create: { tagId: tag.id, vaultEntryId },
     update: {},
   });
+}
+
+export async function grantVaultAccess(
+  orgSlug: string,
+  vaultEntryId: string,
+  employeeId: string,
+) {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "vault", "create");
+  // Security fix (external review, 2026-09-13): without this check, a
+  // grant-scoped (OWN) user who has NOT been granted this entry could
+  // still call grantVaultAccess to grant it to themselves (or anyone
+  // else) — trivially bypassing the whole scoping fix. Must already be
+  // able to edit the entry to hand out access to it.
+  if (!(await canAccessVaultEntry(ctx, vaultEntryId, "edit"))) {
+    throw new Error("Запись не найдена");
+  }
+
+  await grantAccessRecord(ctx.orgId, employeeId, vaultEntryId, ctx.userId);
 
   revalidatePath(`/${orgSlug}/vault/${vaultEntryId}`);
 }
@@ -170,6 +206,9 @@ export async function revokeVaultAccess(
 ) {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "delete");
+  if (!(await canAccessVaultEntry(ctx, vaultEntryId, "edit"))) {
+    throw new Error("Запись не найдена");
+  }
 
   const employee = await prisma.employee.findFirst({
     where: { id: employeeId, orgId: ctx.orgId },
@@ -206,6 +245,15 @@ export async function revealVaultSecret(
 ): Promise<RevealSecretResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "vault", "view");
+  // Security fix (external review, 2026-09-13) — this was the actual
+  // vulnerability: assertPermission only confirmed the role can view
+  // "the vault resource" in general (NONE/ALL), never whether THIS entry
+  // was ever granted to this employee via EmployeeVaultAccess. Same
+  // "not found", not a distinct "forbidden", so a caller can't probe
+  // whether an ungranted entry id exists at all.
+  if (!(await canAccessVaultEntry(ctx, entryId, "view"))) {
+    return { error: "Запись не найдена" };
+  }
 
   const entry = await prisma.vaultServiceEntry.findFirst({
     where: { id: entryId, orgId: ctx.orgId },

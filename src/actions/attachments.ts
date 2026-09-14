@@ -57,7 +57,12 @@ export async function uploadAttachment(
     position = await prisma.attachment.count({ where: { orgId: ctx.orgId, entityType, entityId } });
   }
 
-  const saved = await saveUploadedFile(ctx.orgId, file);
+  let saved;
+  try {
+    saved = await saveUploadedFile(ctx.orgId, file);
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Не удалось сохранить файл" };
+  }
   await prisma.attachment.create({
     data: {
       orgId: ctx.orgId,

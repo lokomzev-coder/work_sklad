@@ -71,6 +71,18 @@ export const SCOPED_RESOURCES: ReadonlySet<Resource> = new Set([
   "tasks",
 ]);
 
+// Security fix (external review, 2026-09-13): vault's OWN scope (used by
+// the MANAGER default below) means "entries I've been explicitly granted"
+// (EmployeeVaultAccess), enforced by lib/vault-scope.ts — a genuinely
+// different, per-employee-grant shape than the assignedEmployeeId owner
+// SCOPED_RESOURCES/lib/scope.ts model above, and vault has no group concept
+// for OWN_GROUP to mean anything distinct from OWN. Deliberately NOT added
+// to SCOPED_RESOURCES: that would offer OWN_GROUP in the CustomRole matrix
+// editor UI as if it behaved differently from OWN for vault, which it
+// doesn't — the editor still only offers NONE/ALL for vault; achieving the
+// MANAGER-style grant-scoped tier for a custom role isn't exposed in the UI
+// yet, a known follow-up, not a silent gap.
+
 /** Never resolved from a CustomRole override — always the actor's base Role
  * default, full stop. Closes the obvious self-escalation loop: a CustomRole
  * can never grant its own bearer (or anyone else) more power to hand out
@@ -106,6 +118,16 @@ export const CAPABILITIES: Record<Role, Record<Resource, ResourcePermission>> = 
   ADMIN: allResources(ALL_PERM),
   MANAGER: {
     ...allResources(ALL_PERM),
+    // Security fix (external review, 2026-09-13): vault access is an
+    // explicit per-entry grant (EmployeeVaultAccess), not a blanket "can
+    // see the resource" toggle — a role resolving to ALL here bypassed
+    // every grant and revealed every organization's secrets. OWN is
+    // enforced by lib/vault-scope.ts (checked explicitly at every read/
+    // reveal/mutate call site, since vault has no assignedEmployeeId for
+    // the generic lib/scope.ts helpers to key off). ADMIN intentionally
+    // stays ALL — the one account meant to see everything unconditionally,
+    // same principle as the platform-admin owner elsewhere in this project.
+    vault: { view: "OWN", create: true, edit: "OWN", delete: true },
     membership: VIEW_ALL, // legacy: membership "read"
     // legacy: settings "read" — MANAGER could see but not edit any of these 6.
     documentStatuses: VIEW_ALL,

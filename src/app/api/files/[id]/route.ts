@@ -5,6 +5,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import type { Resource } from "@/lib/permissions";
 import { readStoredFile } from "@/lib/file-storage";
+import { resolveUploadType } from "@/lib/upload-allowlist";
 
 export const dynamic = "force-dynamic";
 
@@ -54,11 +55,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new NextResponse("Файл не найден на диске", { status: 404 });
   }
 
+  // Security fix (external review, 2026-09-13): NEVER trust
+  // `attachment.mimeType` for the response header — it's a value the
+  // uploading client supplied and this app stored verbatim. Re-derive both
+  // the Content-Type and whether `inline` is even allowed from the
+  // extension-keyed allowlist instead (see lib/upload-allowlist.ts) —
+  // anything not recognized (including legacy rows from before this fix)
+  // falls back to a forced download, never rendered in this app's origin.
+  const resolved = resolveUploadType(attachment.fileName);
+  const contentType = resolved?.mime ?? "application/octet-stream";
+  const dispositionType = resolved?.inline ? "inline" : "attachment";
+
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
-      "Content-Type": attachment.mimeType,
-      "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
+      "Content-Type": contentType,
+      "Content-Disposition": `${dispositionType}; filename*=UTF-8''${encodeURIComponent(attachment.fileName)}`,
       "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

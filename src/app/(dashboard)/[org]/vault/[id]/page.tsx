@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { canAccessVaultEntry } from "@/lib/vault-scope";
 import { updateVaultEntry } from "@/actions/vault";
 import { VaultEntryForm } from "@/components/vault/vault-entry-form";
 import { VaultAccessManager } from "@/components/vault/vault-access-manager";
@@ -21,7 +22,14 @@ export default async function VaultEntryPage({
   if (!can(ctx, "vault", "view")) {
     notFound();
   }
-  const canEdit = can(ctx, "vault", "edit");
+  // Security fix (external review, 2026-09-13): the coarse `can()` check
+  // above only confirms the role can view "the vault resource" in general
+  // — a grant-scoped (OWN) role must still have been explicitly granted
+  // THIS entry (see lib/vault-scope.ts).
+  if (!(await canAccessVaultEntry(ctx, id, "view"))) {
+    notFound();
+  }
+  const canEdit = can(ctx, "vault", "edit") && (await canAccessVaultEntry(ctx, id, "edit"));
 
   const entry = await prisma.vaultServiceEntry.findFirst({
     where: { id, orgId: ctx.orgId },

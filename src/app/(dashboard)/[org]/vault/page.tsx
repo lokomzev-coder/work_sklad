@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
+import { buildVaultScopeWhere } from "@/lib/vault-scope";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,8 +39,12 @@ export default async function VaultPage({
   const activeTab: EntityStatusFilter =
     status === "ARCHIVED" ? "ARCHIVED" : "ACTIVE";
 
+  // Security fix (external review, 2026-09-13): a grant-scoped (OWN) role
+  // only sees entries it's been explicitly granted — see
+  // lib/vault-scope.ts's own comment for why this can't reuse
+  // lib/scope.ts's assignedEmployeeId-based buildScopeWhere.
   const entries = await prisma.vaultServiceEntry.findMany({
-    where: { orgId: ctx.orgId, status: activeTab },
+    where: { orgId: ctx.orgId, status: activeTab, ...buildVaultScopeWhere(ctx) },
     orderBy: { createdAt: "desc" },
     include: { tags: { include: { tag: true } } },
   });

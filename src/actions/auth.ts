@@ -101,6 +101,10 @@ export async function loginAction(
     });
   } catch (err) {
     if (err instanceof Error && err.name === "CredentialsSignin") {
+      const code = (err as Error & { code?: string }).code;
+      if (code === "rate_limited") {
+        return { error: "Слишком много попыток входа. Попробуйте позже." };
+      }
       return { error: "Неверный логин или пароль" };
     }
     throw err;
