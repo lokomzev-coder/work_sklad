@@ -1,4 +1,14 @@
-{$CADDY_DOMAIN} {
+{
+	# Caddy silently falls back to Let's Encrypt's STAGING CA after enough
+	# repeated issuance failures (a courtesy to avoid burning the real
+	# production rate limit while something else — DNS, port-forwarding —
+	# is still being debugged, which is exactly what happened here). A
+	# staging cert is NOT trusted by real browsers, so pin production
+	# explicitly rather than relying on whichever one Caddy picked last.
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
+{$CADDY_DOMAIN}, www.{$CADDY_DOMAIN} {
 	reverse_proxy app:3000
 
 	header {
