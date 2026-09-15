@@ -41,6 +41,41 @@
   раньше было жёстко `1` с комментарием «это dev-only», что перестало
   быть верным ровно с этим деплоем.
 
+### Ветки: `main` (разработка) vs `production` (то, что реально на сервере)
+
+Сервер клонирует **конкретно ветку `production`** (`git clone --branch
+production ...`), не `main`. Разработка (в этом чате, коммиты, пуши в
+`main`) никогда сама по себе не касается сервера — сервер понятия не
+имеет о новых коммитах в `main`, пока их явно не перенесли в
+`production` И не сделали `git pull` прямо на сервере. Это осознанное
+разделение, чтобы текущая работа над фичами/фиксами не могла случайно
+задеть боевой сайт.
+
+**Процедура обновления прода** (выполняется явно, по команде
+пользователя, никогда автоматически):
+
+```bash
+# 1. Локально — перенести готовые изменения в production
+git checkout production
+git merge main --ff-only   # или обычный merge, если история разошлась
+git push origin production
+git checkout main
+
+# 2. На сервере — подтянуть и пересобрать
+ssh work-server@<IP или домен>
+cd ~/worksklad
+git pull
+docker compose -f docker-compose.prod.yml build app   # если менялся код/Dockerfile
+docker compose -f docker-compose.prod.yml up -d
+# Если менялась prisma/schema.prisma — новая миграция плюс:
+docker build --target builder -t worksklad-migrator .
+docker run --rm --network worksklad_internal --env-file .env.production \
+  worksklad-migrator npx prisma migrate deploy
+```
+
+`.env`/`.env.production` (реальные секреты) находятся ТОЛЬКО на сервере,
+не в git — `git pull` их не трогает и не может затереть.
+
 ## 1. Переменные окружения
 
 Обязательные (см. `.env.example` в корне репозитория за актуальным
