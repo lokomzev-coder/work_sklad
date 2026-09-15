@@ -5,6 +5,12 @@
 # with a host-published port, and only 80/443 (TLS auto-issued via Let's
 # Encrypt from the CADDY_DOMAIN env var) — matches the ufw rules set up on
 # the host (22 for SSH, 80/443 for this stack, nothing else).
+#
+# `name:` pinned explicitly — docker compose otherwise derives the project
+# name (and therefore every volume/network name below) from the checkout
+# directory's basename, which would silently orphan the postgres/uploads
+# volumes if that directory is ever renamed or the repo re-cloned elsewhere.
+name: worksklad
 services:
   postgres:
     image: postgres:18-alpine
