@@ -1,0 +1,21 @@
+# Block T deploy, revision 2 (2026-09-15): runs on the home server (behind
+# CGNAT), makes an OUTBOUND connection to the VPS relay's frps — CGNAT has
+# no effect on outbound connections, which is exactly why this works where
+# router port-forwarding couldn't. Exposes the home Caddy's port 80 (the
+# `caddy` service on the same docker network) as remotePort 8080 on the
+# VPS; the VPS's own Caddy reverse-proxies public HTTPS traffic to that
+# port. serverAddr/auth.token are filled in at deploy time, not committed
+# here as literal values — see docker-compose.prod.yml's frpc service.
+serverAddr = "{{ .Envs.FRP_SERVER_ADDR }}"
+serverPort = 7000
+
+[auth]
+method = "token"
+token = "{{ .Envs.FRP_TOKEN }}"
+
+[[proxies]]
+name = "worksklad-http"
+type = "tcp"
+localIP = "caddy"
+localPort = 80
+remotePort = 8080

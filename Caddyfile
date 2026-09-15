@@ -1,14 +1,13 @@
-{
-	# Caddy silently falls back to Let's Encrypt's STAGING CA after enough
-	# repeated issuance failures (a courtesy to avoid burning the real
-	# production rate limit while something else — DNS, port-forwarding —
-	# is still being debugged, which is exactly what happened here). A
-	# staging cert is NOT trusted by real browsers, so pin production
-	# explicitly rather than relying on whichever one Caddy picked last.
-	acme_ca https://acme-v02.api.letsencrypt.org/directory
-}
-
-{$CADDY_DOMAIN}, www.{$CADDY_DOMAIN} {
+# Block T deploy, revision 2 (2026-09-15): the ISP puts this connection
+# behind CGNAT (100.64.0.0/10 on the router's WAN side) — no port-forward
+# on the router can ever be reached from the internet, confirmed live
+# (Let's Encrypt's own HTTP-01/TLS-ALPN-01 challenges timed out connecting
+# to the forwarded ports). Public TLS now terminates on a separate VPS
+# relay instead (see deploy/vps-relay-setup.sh + deploy/frpc.toml) — this
+# Caddy is a plain-HTTP internal hop reached only by the `frpc` service on
+# the same docker network, which tunnels it out to the VPS. It no longer
+# needs its own certificate or a published port at all.
+:80 {
 	reverse_proxy app:3000
 
 	header {

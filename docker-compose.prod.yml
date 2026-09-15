@@ -49,11 +49,11 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      CADDY_DOMAIN: ${CADDY_DOMAIN}
+    # No published ports (Block T revision 2, 2026-09-15): CGNAT means
+    # nothing on this host is reachable via inbound port-forwarding at
+    # all — see Caddyfile's comment. Caddy is now an internal-only hop
+    # reached exclusively by the `frpc` service below, over the
+    # `internal` docker network.
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -62,6 +62,21 @@ services:
       - internal
     depends_on:
       - app
+
+  frpc:
+    build:
+      context: .
+      dockerfile: deploy/frpc.Dockerfile
+    restart: unless-stopped
+    environment:
+      FRP_SERVER_ADDR: ${FRP_SERVER_ADDR}
+      FRP_TOKEN: ${FRP_TOKEN}
+    volumes:
+      - ./deploy/frpc.toml:/etc/frp/frpc.toml:ro
+    networks:
+      - internal
+    depends_on:
+      - caddy
 
 networks:
   internal:
