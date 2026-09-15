@@ -4,25 +4,28 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { createAuditLogExtension } from "@/lib/audit-log";
 
 function createBasePrismaClient() {
+  // `prisma dev`'s local database is PGlite — Postgres compiled to WASM,
+  // running as a single process. Real Postgres forks a backend process per
+  // connection; WASM can't fork at all, so this engine architecturally
+  // accepts exactly ONE connection at a time — every other connection
+  // attempt queues behind it (confirmed via Prisma's own docs and
+  // independent write-ups, not a guess). A pool sized for a real Postgres
+  // server (this was previously 20, raised from pg's default 10 to survive
+  // a heavy page's own multi-query burst) instead opens several connections
+  // at once against an engine that can only ever grant one — under
+  // Turbopack's cold-start burst this reliably crashed the whole
+  // `prisma dev` process outright rather than gracefully queuing. `max: 1`
+  // makes this pool behave the way the engine actually works in dev: every
+  // query in that process serializes through one real connection.
+  //
+  // Production (Block T deploy, 2026-09-15) runs against a real Postgres in
+  // its own container, not `prisma dev` — the single-connection constraint
+  // above doesn't apply there, and serializing every query through one
+  // connection would be a severe, self-inflicted concurrency bottleneck.
+  const isRealPostgres = process.env.NODE_ENV === "production";
   const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    // `prisma dev`'s local database is PGlite — Postgres compiled to WASM,
-    // running as a single process. Real Postgres forks a backend process
-    // per connection; WASM can't fork at all, so this engine architecturally
-    // accepts exactly ONE connection at a time — every other connection
-    // attempt queues behind it (confirmed via Prisma's own docs and
-    // independent write-ups, not a guess). A pool sized for a real Postgres
-    // server (this was previously 20, raised from pg's default 10 to
-    // survive a heavy page's own multi-query burst) instead opens several
-    // connections at once against an engine that can only ever grant one —
-    // under Turbopack's cold-start burst this reliably crashed the whole
-    // `prisma dev` process outright rather than gracefully queuing. `max: 1`
-    // makes this pool behave the way the engine actually works: every query
-    // in this process serializes through one real connection. Slower under
-    // concurrent load than a real Postgres would allow, but correct — and
-    // this project's Prisma access is dev-only against `prisma dev` in the
-    // first place, so there's no production case being traded away here.
-    max: 1,
+    max: isRealPostgres ? 10 : 1,
     // `next dev` (Turbopack) runs the actual route/RSC work in a separate
     // OS process from the main CLI process — confirmed experimentally (each
     // logged a different process.pid creating its own PrismaClient). Since
@@ -33,8 +36,9 @@ function createBasePrismaClient() {
     // actively made the cross-process collision worse, not better. A short
     // idle timeout releases the slot quickly when this process isn't
     // actively querying, so it doesn't monopolize the only connection
-    // `prisma dev` can ever hand out.
-    idleTimeoutMillis: 3_000,
+    // `prisma dev` can ever hand out. Real Postgres has no such single-slot
+    // constraint, so production gets a normal, longer idle timeout instead.
+    idleTimeoutMillis: isRealPostgres ? 30_000 : 3_000,
     keepAlive: true,
   });
   // Without an 'error' listener, pg's Pool crashes the whole Node process

@@ -1,11 +1,45 @@
 # Деплой — памятка для разработчика
 
 Проект: Next.js 16 (App Router) + Prisma 7 (driver adapter, `@prisma/adapter-pg`)
-+ PostgreSQL. Домен проекта — **worksklad.ru**; конкретная хостинг-платформа
-пока не выбрана (ROADMAP, Блок L) — эта памятка написана максимально общо,
-под "свой Linux-сервер + reverse proxy", и подходит и для VPS, и для
-облачного инстанса. Везде ниже, где встречается `ваш-домен.ру` в примерах
-конфигурации — на реальном сервере подставляйте `worksklad.ru`.
++ PostgreSQL. Домен проекта — **worksklad.ru**. Везде ниже, где встречается
+`ваш-домен.ру` в примерах конфигурации — на реальном сервере подставляйте
+`worksklad.ru`.
+
+**Фактический деплой (Блок T, 2026-09-15)**: собственный Linux-сервер
+пользователя (Ubuntu 26.04, домашняя сеть, статический внешний IP,
+`worksklad.ru` на reg.ru) — реализовано через **Docker Compose**, не
+голый systemd+nginx+certbot, который описывает остальная часть этой
+памятки (тот вариант остаётся ниже как общий справочный материал —
+принципы те же, детали процесса отличаются). Реальные файлы:
+`Dockerfile` (multi-stage, `node:22-slim`, `next.config.ts`'s
+`output: "standalone"`), `docker-compose.prod.yml` (три сервиса:
+`postgres` без публикуемого порта наружу вообще, `app`, `caddy` —
+единственный с портами 80/443 наружу), `Caddyfile` (реверс-прокси +
+автоматический TLS через Let's Encrypt, домен берётся из `CADDY_DOMAIN`),
+`deploy/backup-db.sh` (ежедневный `pg_dump` через cron хоста, не
+контейнер — переживает `docker compose down`).
+
+Разница с общими инструкциями ниже, которая реально важна:
+- **Postgres** — не отдельная systemd-служба, а контейнер на internal
+  docker-сети, недоступной ни хосту, ни тем более интернету (см. п.6
+  ниже — эффект тот же, механизм другой).
+- **Процесс-менеджер** (п.3) — `restart: unless-stopped` в
+  `docker-compose.prod.yml`, не systemd unit.
+- **Reverse proxy + TLS** (п.4) — Caddy (автоматический TLS без ручного
+  certbot), не nginx.
+- **Миграции**: baseline-миграция уже сгенерирована
+  (`prisma/migrations/00000000000000_init/`) — `prisma migrate deploy`
+  прогоняется на первом деплое через одноразовый контейнер из
+  промежуточного `builder`-таргета `Dockerfile` (лёгкий рантайм-образ не
+  тащит сам CLI `prisma`, только `@prisma/client`/`pg`/`@prisma/adapter-pg`,
+  которые реально нужны в рантайме) — `docker build --target builder -t
+  worksklad-migrator . && docker run --rm --network worksklad_internal
+  --env-file .env.production worksklad-migrator npx prisma migrate deploy`.
+- **`src/lib/prisma.ts`**: пул подключений теперь зависит от
+  `NODE_ENV` — `max: 10` в production (реальный Postgres), `max: 1`
+  только для локального `prisma dev` (PGlite, однопоточный движок) —
+  раньше было жёстко `1` с комментарием «это dev-only», что перестало
+  быть верным ровно с этим деплоем.
 
 ## 1. Переменные окружения
 
@@ -198,5 +232,8 @@ pdf-browser.ts) — держит память постоянно, не толь�
       если розница/касса будет использоваться — там описано, что
       фискализация и приём карты по умолчанию не активны без
       дополнительной настройки.
-- [ ] `npx playwright install --with-deps chromium` прогнан, `INTERNAL_APP_ORIGIN`
-      задан — иначе «Скачать PDF» (раздел 7) не работает.
+- [ ] `npx playwright install --with-deps chromium` прогнан (в Docker-варианте
+      деплоя это уже часть `Dockerfile`, вручную делать не нужно —
+      проверить, что образ пересобран после любого изменения версии
+      `playwright` в `package.json`), `INTERNAL_APP_ORIGIN` задан — иначе
+      «Скачать PDF» (раздел 7) не работает.

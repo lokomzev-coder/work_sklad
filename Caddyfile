@@ -1,0 +1,13 @@
+{$CADDY_DOMAIN} {
+	reverse_proxy app:3000
+
+	header {
+		# Belt-and-suspenders alongside next.config.ts's own nosniff header —
+		# harmless to set twice, cheap insurance if the app header is ever
+		# missing on an edge case (e.g. an error page Next renders itself).
+		X-Content-Type-Options "nosniff"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	encode zstd gzip
+}

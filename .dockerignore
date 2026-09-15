@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+storage/uploads
+strix_runs
+.venv*
+.playwright-mcp
+.playwright-cli
+*.log

@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // Block T deploy (2026-09-15): self-contained server bundle for the
+  // production Docker image (see Dockerfile) — traces only the deps each
+  // route actually needs into .next/standalone instead of shipping the
+  // full node_modules.
+  output: "standalone",
   // Block J: catalog import accepts files up to 10MB (matching МойСклад's
   // own cap) — Server Actions otherwise cap the request body at 1MB, which
   // would reject the upload before parseImportFile ever runs.

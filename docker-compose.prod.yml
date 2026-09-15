@@ -1,0 +1,68 @@
+# Block T deploy (2026-09-15): production stack for self-hosting on the
+# user's own Linux server. Postgres is NOT published to the host or
+# internet — only reachable from the `app` service over the internal
+# docker network `internal` (no ports: mapping). Caddy is the only service
+# with a host-published port, and only 80/443 (TLS auto-issued via Let's
+# Encrypt from the CADDY_DOMAIN env var) — matches the ufw rules set up on
+# the host (22 for SSH, 80/443 for this stack, nothing else).
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: worksklad
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: worksklad
+    volumes:
+      # postgres:18's image changed convention: it expects the volume at
+      # /var/lib/postgresql (not the old .../data) and refuses to start,
+      # treating a mount at the old path as leftover data from an
+      # unmanaged upgrade — see docker-library/postgres#1259.
+      - postgres_data:/var/lib/postgresql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worksklad"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    volumes:
+      - uploads_data:/app/storage/uploads
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+    depends_on:
+      - app
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:
