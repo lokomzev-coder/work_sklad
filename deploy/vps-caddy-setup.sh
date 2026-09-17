@@ -22,6 +22,17 @@ apt-get install -y -qq caddy
 
 echo "=== Caddyfile ==="
 cat > /etc/caddy/Caddyfile <<EOF
+{
+	# Security audit (2026-09-17): confirmed live that Caddy fell back to
+	# Let's Encrypt's STAGING CA here during initial setup (repeated
+	# challenge failures while DNS/frp were still being wired up) — a
+	# staging cert isn't trusted by real browsers. It self-corrected once
+	# the underlying issue cleared, but pin production explicitly so a
+	# future rough patch (renewal failures, frp outage) can't silently
+	# leave a distrusted cert live again.
+	acme_ca https://acme-v02.api.letsencrypt.org/directory
+}
+
 ${DOMAIN}, www.${DOMAIN} {
 	reverse_proxy 127.0.0.1:8080
 
