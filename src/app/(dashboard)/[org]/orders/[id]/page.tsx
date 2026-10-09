@@ -205,7 +205,10 @@ export default async function EditOrderPage({
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Заказ №{order.number}</h1>
+        <h1 className="text-2xl font-semibold">
+          Заказ №{order.number}
+          {order.name ? <span className="text-muted-foreground"> — {order.name}</span> : null}
+        </h1>
         <div className="flex items-center gap-2">
           <CreateDocumentMenu
             orgSlug={org}
@@ -270,6 +273,7 @@ export default async function EditOrderPage({
         projectOptions={projects.map((p) => ({ value: p.id, label: p.name }))}
         customFieldDefs={customFieldDefs}
         defaultValues={{
+          name: order.name,
           clientId: order.clientId,
           assignedEmployeeId: order.assignedEmployeeId,
           contractId: order.contractId,

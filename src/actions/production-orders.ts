@@ -15,6 +15,7 @@ import { notifyDocumentEvent } from "@/lib/scenarios";
 import { saveCustomFieldValuesRecord } from "@/lib/custom-fields";
 
 const upsertProductionOrderSchema = z.object({
+  name: z.string().trim().max(255).nullable().optional(),
   techCardId: z.string().min(1, "Выберите техкарту"),
   materialsStoreId: z.string().min(1, "Выберите склад материалов"),
   productsStoreId: z.string().min(1, "Выберите склад продукции"),
@@ -23,6 +24,7 @@ const upsertProductionOrderSchema = z.object({
 });
 
 export interface UpsertProductionOrderInput {
+  name?: string | null;
   techCardId: string;
   materialsStoreId: string;
   productsStoreId: string;
@@ -140,6 +142,7 @@ export async function upsertProductionOrder(
     await prisma.productionOrder.update({
       where: { id: productionOrderId, orgId: ctx.orgId },
       data: {
+        name: parsed.data.name?.trim() || null,
         techCardId: parsed.data.techCardId,
         materialsStoreId: parsed.data.materialsStoreId,
         productsStoreId: parsed.data.productsStoreId,
@@ -157,6 +160,7 @@ export async function upsertProductionOrder(
       data: {
         orgId: ctx.orgId,
         number,
+        name: parsed.data.name?.trim() || null,
         statusId,
         techCardId: parsed.data.techCardId,
         materialsStoreId: parsed.data.materialsStoreId,

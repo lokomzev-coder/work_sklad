@@ -64,6 +64,7 @@ export default async function InvoicesOutPage({
                     <TableCell>
                       <Link href={`/${org}/invoices-out/${invoice.id}`} className="font-medium hover:underline">
                         №{invoice.number}
+                        {invoice.name ? <span className="font-normal text-muted-foreground"> — {invoice.name}</span> : null}
                       </Link>
                     </TableCell>
                     <TableCell>{invoice.client?.name ?? "—"}</TableCell>

@@ -26,6 +26,7 @@ interface ProductionOrderFormProps {
   locked?: boolean;
   customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
+    name?: string | null;
     techCardId: string | null;
     materialsStoreId: string | null;
     productsStoreId: string | null;
@@ -49,6 +50,7 @@ export function ProductionOrderForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(defaultValues?.name ?? "");
   const [techCardId, setTechCardId] = useState<string | null>(defaultValues?.techCardId ?? null);
   const [materialsStoreId, setMaterialsStoreId] = useState<string | null>(
     defaultValues?.materialsStoreId ?? defaultStoreId,
@@ -87,6 +89,7 @@ export function ProductionOrderForm({
 
     startTransition(async () => {
       const result = await upsertProductionOrder(orgSlug, productionOrderId, {
+        name: name.trim() || null,
         techCardId,
         materialsStoreId,
         productsStoreId,
@@ -109,6 +112,16 @@ export function ProductionOrderForm({
           <CardTitle>Производственное задание</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2 sm:col-span-2">
+          <Label htmlFor="production-order-name">Название</Label>
+          <Input
+            id="production-order-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Необязательно"
+            maxLength={255}
+          />
+        </div>
         <div className="flex flex-col gap-2">
           <Label>Техкарта</Label>
           <EntityCombobox

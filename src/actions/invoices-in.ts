@@ -18,6 +18,7 @@ const lineItemSchema = z.object({
 });
 
 const upsertInvoiceInSchema = z.object({
+  name: z.string().trim().max(255).nullable().optional(),
   supplierId: z.string().min(1).nullable(),
   contractId: z.string().min(1).nullable().optional(),
   legalEntityId: z.string().min(1).nullable().optional(),
@@ -25,6 +26,7 @@ const upsertInvoiceInSchema = z.object({
 });
 
 export interface UpsertInvoiceInInput {
+  name?: string | null;
   supplierId: string | null;
   contractId?: string | null;
   legalEntityId?: string | null;
@@ -118,6 +120,7 @@ export async function upsertInvoiceIn(
       prisma.invoiceIn.update({
         where: { id: invoiceInId, orgId: ctx.orgId },
         data: {
+          name: parsed.data.name?.trim() || null,
           supplierId: parsed.data.supplierId,
           contractId: parsed.data.contractId ?? null,
           legalEntityId: parsed.data.legalEntityId ?? null,
@@ -135,6 +138,7 @@ export async function upsertInvoiceIn(
       data: {
         orgId: ctx.orgId,
         number,
+        name: parsed.data.name?.trim() || null,
         statusId,
         supplierId: parsed.data.supplierId,
         contractId: parsed.data.contractId ?? null,

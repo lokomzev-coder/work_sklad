@@ -21,6 +21,7 @@ const lineItemSchema = z.object({
 });
 
 const upsertPurchaseOrderSchema = z.object({
+  name: z.string().trim().max(255).nullable().optional(),
   supplierId: z.string().min(1).nullable(),
   assignedEmployeeId: z.string().min(1).nullable(),
   contractId: z.string().min(1).nullable().optional(),
@@ -29,6 +30,7 @@ const upsertPurchaseOrderSchema = z.object({
 });
 
 export interface UpsertPurchaseOrderInput {
+  name?: string | null;
   supplierId: string | null;
   assignedEmployeeId: string | null;
   contractId?: string | null;
@@ -140,6 +142,7 @@ export async function upsertPurchaseOrder(
       prisma.purchaseOrder.update({
         where: { id: purchaseOrderId, orgId: ctx.orgId },
         data: {
+          name: parsed.data.name?.trim() || null,
           supplierId: parsed.data.supplierId,
           assignedEmployeeId: parsed.data.assignedEmployeeId,
           contractId: parsed.data.contractId ?? null,
@@ -158,6 +161,7 @@ export async function upsertPurchaseOrder(
       data: {
         orgId: ctx.orgId,
         number,
+        name: parsed.data.name?.trim() || null,
         statusId,
         supplierId: parsed.data.supplierId,
         assignedEmployeeId: parsed.data.assignedEmployeeId,

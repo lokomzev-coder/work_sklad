@@ -10,5 +10,10 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Only consumed by `prisma migrate diff --from-migrations` to generate
+    // incremental migration SQL for prod (`migrate dev`'s own shadow-db step
+    // has a separate, unrelated bug in this environment — see project memory
+    // — which is why `db push` remains the dev-loop command, not this).
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });

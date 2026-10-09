@@ -143,7 +143,12 @@ export default async function ProductionOrderDetailPage({
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Задание №{productionOrder.number}</h1>
+        <h1 className="text-2xl font-semibold">
+          Задание №{productionOrder.number}
+          {productionOrder.name ? (
+            <span className="text-muted-foreground"> — {productionOrder.name}</span>
+          ) : null}
+        </h1>
         <div className="flex items-center gap-2">
           <PrintDialog
             documentType="productionOrder"
@@ -183,6 +188,7 @@ export default async function ProductionOrderDetailPage({
           locked={isInProgress}
           customFieldDefs={customFieldDefs}
           defaultValues={{
+            name: productionOrder.name,
             techCardId: productionOrder.techCardId,
             materialsStoreId: productionOrder.materialsStoreId,
             productsStoreId: productionOrder.productsStoreId,

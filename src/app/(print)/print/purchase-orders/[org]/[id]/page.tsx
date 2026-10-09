@@ -47,7 +47,7 @@ export default async function PrintPurchaseOrderPage({
 
   return (
     <PrintDocument
-      title={`Заказ поставщику №${purchaseOrder.number} от ${purchaseOrder.createdAt.toLocaleDateString("ru-RU")}`}
+      title={`Заказ поставщику №${purchaseOrder.number}${purchaseOrder.name ? ` — ${purchaseOrder.name}` : ""} от ${purchaseOrder.createdAt.toLocaleDateString("ru-RU")}`}
       issuer={
         issuer
           ? {

@@ -21,6 +21,7 @@ import { createPickingWave } from "@/actions/picking-waves";
 export interface OrderRow {
   id: string;
   number: number;
+  name: string | null;
   clientName: string;
   statusName: string;
   statusColor: string;
@@ -121,6 +122,9 @@ export function OrdersSelectableTable({ orgSlug, orders, canCreateWave }: Orders
                     <TableCell>
                       <Link href={href} className="block font-medium hover:underline">
                         №{order.number}
+                        {order.name ? (
+                          <span className="font-normal text-muted-foreground"> — {order.name}</span>
+                        ) : null}
                       </Link>
                     </TableCell>
                     <TableCell>

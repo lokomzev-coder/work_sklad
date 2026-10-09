@@ -174,7 +174,12 @@ export default async function EditPurchaseOrderPage({
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Заказ поставщику №{purchaseOrder.number}</h1>
+        <h1 className="text-2xl font-semibold">
+          Заказ поставщику №{purchaseOrder.number}
+          {purchaseOrder.name ? (
+            <span className="text-muted-foreground"> — {purchaseOrder.name}</span>
+          ) : null}
+        </h1>
         <div className="flex items-center gap-2">
           {can(ctx, "warehouse", "create") && (
             <CreateSupplyButton orgSlug={org} purchaseOrderId={purchaseOrder.id} />
@@ -221,6 +226,7 @@ export default async function EditPurchaseOrderPage({
         legalEntityOptions={legalEntities.map((e) => ({ value: e.id, label: e.name }))}
         customFieldDefs={customFieldDefs}
         defaultValues={{
+          name: purchaseOrder.name,
           supplierId: purchaseOrder.supplierId,
           assignedEmployeeId: purchaseOrder.assignedEmployeeId,
           contractId: purchaseOrder.contractId,

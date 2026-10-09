@@ -88,7 +88,10 @@ export default async function InvoiceOutDetailPage({
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Счёт №{invoiceOut.number}</h1>
+        <h1 className="text-2xl font-semibold">
+          Счёт №{invoiceOut.number}
+          {invoiceOut.name ? <span className="text-muted-foreground"> — {invoiceOut.name}</span> : null}
+        </h1>
         <div className="flex items-center gap-2">
           <PrintDialog
             documentType="invoiceOut"
@@ -128,6 +131,7 @@ export default async function InvoiceOutDetailPage({
           invoiceOut.order ? { number: invoiceOut.order.number, href: `/${org}/orders/${invoiceOut.orderId}` } : null
         }
         defaultValues={{
+          name: invoiceOut.name,
           clientId: invoiceOut.clientId,
           contractId: invoiceOut.contractId,
           legalEntityId: invoiceOut.legalEntityId,

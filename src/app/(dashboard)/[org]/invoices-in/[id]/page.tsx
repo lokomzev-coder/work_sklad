@@ -89,7 +89,10 @@ export default async function InvoiceInDetailPage({
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Счёт №{invoiceIn.number}</h1>
+        <h1 className="text-2xl font-semibold">
+          Счёт №{invoiceIn.number}
+          {invoiceIn.name ? <span className="text-muted-foreground"> — {invoiceIn.name}</span> : null}
+        </h1>
         <div className="flex items-center gap-2">
           <PrintDialog
             documentType="invoiceIn"
@@ -130,6 +133,7 @@ export default async function InvoiceInDetailPage({
             : null
         }
         defaultValues={{
+          name: invoiceIn.name,
           supplierId: invoiceIn.supplierId,
           contractId: invoiceIn.contractId,
           legalEntityId: invoiceIn.legalEntityId,

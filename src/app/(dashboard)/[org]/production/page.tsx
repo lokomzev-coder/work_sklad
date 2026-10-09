@@ -75,6 +75,7 @@ export default async function ProductionOrdersPage({
                   <TableCell>
                     <Link href={`/${org}/production/${po.id}`} className="font-medium hover:underline">
                       №{po.number}
+                      {po.name ? <span className="font-normal text-muted-foreground"> — {po.name}</span> : null}
                     </Link>
                   </TableCell>
                   <TableCell>

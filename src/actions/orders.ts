@@ -18,6 +18,7 @@ const lineItemSchema = z.object({
 });
 
 const upsertOrderSchema = z.object({
+  name: z.string().trim().max(255).nullable().optional(),
   clientId: z.string().min(1).nullable(),
   assignedEmployeeId: z.string().min(1).nullable(),
   contractId: z.string().min(1).nullable().optional(),
@@ -31,6 +32,7 @@ const upsertOrderSchema = z.object({
 });
 
 export interface UpsertOrderInput {
+  name?: string | null;
   clientId: string | null;
   assignedEmployeeId: string | null;
   contractId?: string | null;
@@ -189,6 +191,7 @@ export async function upsertOrder(
       await tx.order.update({
         where: { id: orderId, orgId: ctx.orgId },
         data: {
+          name: parsed.data.name?.trim() || null,
           clientId: parsed.data.clientId,
           assignedEmployeeId: parsed.data.assignedEmployeeId,
           contractId: parsed.data.contractId ?? null,
@@ -216,6 +219,7 @@ export async function upsertOrder(
         data: {
           orgId: ctx.orgId,
           number,
+          name: parsed.data.name?.trim() || null,
           statusId,
           clientId: parsed.data.clientId,
           assignedEmployeeId: parsed.data.assignedEmployeeId,

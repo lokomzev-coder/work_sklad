@@ -44,6 +44,7 @@ interface PurchaseOrderFormProps {
   legalEntityOptions: ComboboxOption[];
   customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
+    name?: string | null;
     supplierId: string | null;
     assignedEmployeeId: string | null;
     contractId: string | null;
@@ -71,6 +72,7 @@ export function PurchaseOrderForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(defaultValues?.name ?? "");
   const [supplierId, setSupplierId] = useState<string | null>(defaultValues?.supplierId ?? null);
   const [assignedEmployeeId, setAssignedEmployeeId] = useState<string | null>(
     defaultValues?.assignedEmployeeId ?? null,
@@ -141,6 +143,7 @@ export function PurchaseOrderForm({
 
     startTransition(async () => {
       const result = await upsertPurchaseOrder(orgSlug, purchaseOrderId, {
+        name: name.trim() || null,
         supplierId,
         assignedEmployeeId,
         contractId,
@@ -158,6 +161,20 @@ export function PurchaseOrderForm({
 
   return (
     <div className="flex flex-col gap-4">
+      <Card>
+        <CardContent className="grid gap-4 pt-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="po-name">Название</Label>
+            <Input
+              id="po-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Необязательно"
+              maxLength={255}
+            />
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Поставщик и ответственный</CardTitle>

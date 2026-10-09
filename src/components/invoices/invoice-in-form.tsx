@@ -47,6 +47,7 @@ interface InvoiceInFormProps {
    * was created via "Создать счёт" from a purchase order. */
   sourcePurchaseOrder?: { number: number; href: string } | null;
   defaultValues?: {
+    name?: string | null;
     supplierId: string | null;
     contractId: string | null;
     legalEntityId: string | null;
@@ -73,6 +74,7 @@ export function InvoiceInForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(defaultValues?.name ?? "");
   const [supplierId, setSupplierId] = useState<string | null>(defaultValues?.supplierId ?? null);
   const [contractId, setContractId] = useState<string | null>(defaultValues?.contractId ?? null);
   const [legalEntityId, setLegalEntityId] = useState<string | null>(defaultValues?.legalEntityId ?? null);
@@ -138,6 +140,7 @@ export function InvoiceInForm({
 
     startTransition(async () => {
       const result = await upsertInvoiceIn(orgSlug, invoiceInId, {
+        name: name.trim() || null,
         supplierId,
         contractId,
         legalEntityId,
@@ -162,6 +165,20 @@ export function InvoiceInForm({
           </Link>
         </p>
       )}
+      <Card>
+        <CardContent className="grid gap-4 pt-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="invoice-in-name">Название</Label>
+            <Input
+              id="invoice-in-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Необязательно"
+              maxLength={255}
+            />
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Поставщик</CardTitle>

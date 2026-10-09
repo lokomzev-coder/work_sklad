@@ -51,6 +51,7 @@ interface OrderFormProps {
   projectOptions: ComboboxOption[];
   customFieldDefs?: CustomFieldDef[];
   defaultValues?: {
+    name?: string | null;
     clientId: string | null;
     assignedEmployeeId: string | null;
     contractId: string | null;
@@ -86,6 +87,7 @@ export function OrderForm({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(defaultValues?.name ?? "");
   const [clientId, setClientId] = useState<string | null>(
     defaultValues?.clientId ?? null,
   );
@@ -226,6 +228,7 @@ export function OrderForm({
 
     startTransition(async () => {
       const result = await upsertOrder(orgSlug, orderId, {
+        name: name.trim() || null,
         clientId,
         assignedEmployeeId,
         contractId,
@@ -248,6 +251,20 @@ export function OrderForm({
 
   return (
     <div className="flex flex-col gap-4">
+      <Card>
+        <CardContent className="grid gap-4 pt-6 sm:grid-cols-2">
+          <div className="flex flex-col gap-2 sm:col-span-2">
+            <Label htmlFor="order-name">Название</Label>
+            <Input
+              id="order-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Необязательно, например «Заказ на выставку»"
+              maxLength={255}
+            />
+          </div>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Клиент и ответственный</CardTitle>

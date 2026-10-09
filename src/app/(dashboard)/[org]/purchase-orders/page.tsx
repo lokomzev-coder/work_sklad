@@ -75,6 +75,7 @@ export default async function PurchaseOrdersPage({
                     <TableCell>
                       <Link href={`/${org}/purchase-orders/${po.id}`} className="font-medium hover:underline">
                         №{po.number}
+                        {po.name ? <span className="font-normal text-muted-foreground"> — {po.name}</span> : null}
                       </Link>
                     </TableCell>
                     <TableCell>{po.supplier?.name ?? "—"}</TableCell>

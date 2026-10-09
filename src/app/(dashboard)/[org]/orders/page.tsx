@@ -71,6 +71,7 @@ export default async function OrdersPage({
           return {
             id: order.id,
             number: order.number,
+            name: order.name,
             clientName: order.client?.name ?? "—",
             statusName: order.status.name,
             statusColor: order.status.color,

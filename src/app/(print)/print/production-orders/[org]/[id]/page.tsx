@@ -127,7 +127,7 @@ export default async function PrintProductionOrderPage({
 
   return (
     <PrintProductionDocument
-      title={`Производственное задание №${productionOrder.number} от ${productionOrder.createdAt.toLocaleDateString("ru-RU")}`}
+      title={`Производственное задание №${productionOrder.number}${productionOrder.name ? ` — ${productionOrder.name}` : ""} от ${productionOrder.createdAt.toLocaleDateString("ru-RU")}`}
       issuer={{
         name: issuer.name,
         inn: issuer.inn,

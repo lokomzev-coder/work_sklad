@@ -43,7 +43,7 @@ export default async function PrintInvoiceOutPage({
 
   return (
     <PrintDocument
-      title={`Счёт покупателю №${invoiceOut.number} от ${invoiceOut.createdAt.toLocaleDateString("ru-RU")}`}
+      title={`Счёт покупателю №${invoiceOut.number}${invoiceOut.name ? ` — ${invoiceOut.name}` : ""} от ${invoiceOut.createdAt.toLocaleDateString("ru-RU")}`}
       issuer={
         issuer
           ? {
