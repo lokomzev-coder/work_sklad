@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { checkStoreLimit } from "@/lib/subscription";
 import { storeSchema } from "@/lib/validation/store";
 import { archiveOrDelete } from "@/lib/archive";
 
@@ -26,6 +27,11 @@ export async function createStore(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "warehouse", "create");
+
+  const limitCheck = await checkStoreLimit(ctx.orgId);
+  if (!limitCheck.ok) {
+    return { error: limitCheck.error };
+  }
 
   const parsed = parseStoreForm(formData);
   if (!parsed.success) {

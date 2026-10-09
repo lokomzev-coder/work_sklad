@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertFeatureEnabled, KNOWN_FEATURE_KEYS } from "@/lib/subscription";
 import type { CustomFieldEntityType } from "@/generated/prisma/enums";
 
 export interface ActionResult {
@@ -26,6 +27,7 @@ export async function createCustomFieldDefinition(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "customFields", "create");
+  assertFeatureEnabled(ctx, KNOWN_FEATURE_KEYS.customFields);
 
   const parsed = createSchema.safeParse({
     name: formData.get("name"),

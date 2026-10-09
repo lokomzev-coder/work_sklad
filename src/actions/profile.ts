@@ -11,6 +11,53 @@ import {
   updateOwnDefaultsSchema,
 } from "@/lib/validation/profile";
 
+export interface LinkMyEmployeeResult {
+  error?: string;
+}
+
+/**
+ * Block W (explicit request, 2026-09-22) — self-service fix for a real
+ * onboarding gap: registering via /register creates a Membership with no
+ * Employee at all (actions/auth.ts never sets one), and several actions
+ * (uploads, tasks, cash orders, comments, counterparty adjustments) require
+ * `ctx.employeeId` for attribution — so the founding admin could log in and
+ * immediately be unable to upload a product photo, with an error mentioning
+ * "employee link" and no way to actually fix it themselves. Either links to
+ * an existing Employee with no login yet (`existingEmployeeId`), or creates
+ * a brand-new one named after the account. No permission gate — this only
+ * ever touches the caller's own Membership, same self-service bar as
+ * updateOwnDefaults above.
+ */
+export async function linkMyEmployee(
+  orgSlug: string,
+  existingEmployeeId: string | null,
+): Promise<LinkMyEmployeeResult> {
+  const ctx = await getOrgContext(orgSlug);
+  if (ctx.employeeId) {
+    return { error: "Аккаунт уже привязан к карточке сотрудника" };
+  }
+
+  const membership = await prisma.membership.findFirst({ where: { userId: ctx.userId, orgId: ctx.orgId } });
+  if (!membership) return { error: "Не удалось найти аккаунт в этой организации" };
+
+  let employeeId = existingEmployeeId;
+  if (employeeId) {
+    const employee = await prisma.employee.findFirst({ where: { id: employeeId, orgId: ctx.orgId } });
+    if (!employee) return { error: "Сотрудник не найден" };
+    const alreadyLinked = await prisma.membership.findFirst({ where: { employeeId, orgId: ctx.orgId } });
+    if (alreadyLinked) return { error: "У этого сотрудника уже есть свой вход" };
+  } else {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { name: true } });
+    const created = await prisma.employee.create({ data: { orgId: ctx.orgId, fullName: user.name } });
+    employeeId = created.id;
+  }
+
+  await prisma.membership.update({ where: { id: membership.id }, data: { employeeId } });
+
+  revalidatePath(`/${orgSlug}/settings/profile`);
+  return {};
+}
+
 export interface ActionResult {
   error?: string;
   success?: boolean;
@@ -39,11 +86,6 @@ export async function updateOwnProfile(
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Неверные данные" };
-  }
-
-  const existing = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (existing && existing.id !== userId) {
-    return { error: "Этот email уже используется другим аккаунтом" };
   }
 
   await prisma.user.update({

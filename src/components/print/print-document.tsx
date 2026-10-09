@@ -87,13 +87,13 @@ export function PrintDocument({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr className="border-b-2 border-gray-800">
-            <th className="py-1 text-left">№</th>
-            <th className="py-1 text-left">Наименование</th>
-            <th className="py-1 text-right">Кол-во</th>
-            <th className="py-1 text-left">Ед.</th>
+            <th className="py-1 pr-2 text-left">№</th>
+            <th className="py-1 pr-2 text-left">Наименование</th>
+            <th className="py-1 pr-2 text-right">Кол-во</th>
+            <th className="py-1 pr-2 text-left">Ед.</th>
             {showPrices && (
               <>
-                <th className="py-1 text-right">Цена</th>
+                <th className="py-1 pr-2 text-right">Цена</th>
                 <th className="py-1 text-right">Сумма</th>
               </>
             )}
@@ -102,13 +102,13 @@ export function PrintDocument({
         <tbody>
           {lines.map((line, i) => (
             <tr key={i} className="border-b border-gray-200">
-              <td className="py-1">{i + 1}</td>
-              <td className="py-1">{line.name}</td>
-              <td className="py-1 text-right">{line.quantity}</td>
-              <td className="py-1">{line.unit}</td>
+              <td className="py-1 pr-2">{i + 1}</td>
+              <td className="py-1 pr-2">{line.name}</td>
+              <td className="py-1 pr-2 text-right">{line.quantity}</td>
+              <td className="py-1 pr-2">{line.unit}</td>
               {showPrices && (
                 <>
-                  <td className="py-1 text-right">{line.price}</td>
+                  <td className="py-1 pr-2 text-right">{line.price}</td>
                   <td className="py-1 text-right">{line.sum}</td>
                 </>
               )}

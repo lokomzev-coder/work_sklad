@@ -111,6 +111,9 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
                 currency: true,
                 maxEmployees: true,
                 maxOrdersPerMonth: true,
+                maxStorageMb: true,
+                maxStores: true,
+                maxLegalEntities: true,
                 features: true,
               },
             },
@@ -137,10 +140,17 @@ export async function getOrgContext(orgSlug: string): Promise<OrgContext> {
   });
   const configuredFeatureKeys = new Set(featureCatalog.map((f) => f.key));
   const alwaysIncludedKeys = featureCatalog.filter((f) => f.includedInAllPlans).map((f) => f.key);
-  const enabledFeatures = resolveEnabledFeatures(
-    fullMembership?.org?.subscriptionPlan?.features,
-    alwaysIncludedKeys,
-  );
+  // Block W (explicit request, 2026-09-22) — a TRIAL org has no plan at all
+  // yet (subscriptionPlanId is null), so it used to fall through to only
+  // `alwaysIncludedKeys` — i.e. every gated feature was blocked during the
+  // trial, directly contradicting the trial banner's own "полный доступ до
+  // <date>" promise (settings/subscription/page.tsx). GRACE keeps the
+  // previous plan's real features (correct — it's a lapsed paid plan, not a
+  // trial), only TRIAL gets the full-access override.
+  const enabledFeatures =
+    subscriptionState.kind === "TRIAL"
+      ? new Set(configuredFeatureKeys)
+      : resolveEnabledFeatures(fullMembership?.org?.subscriptionPlan?.features, alwaysIncludedKeys);
 
   const override = fullMembership?.customRole
     ? parseCustomRolePermissions(fullMembership.customRole.permissions)

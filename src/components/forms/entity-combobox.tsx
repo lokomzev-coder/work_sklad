@@ -52,7 +52,16 @@ export function EntityCombobox({
             variant="outline"
             disabled={disabled}
             className={cn(
-              "w-full justify-between font-normal",
+              // min-w-0 is load-bearing: a flex/grid item's default
+              // min-width is auto (its content's min-content size), which
+              // silently overrides flex-1/flex-shrink and stops it from
+              // ever shrinking below the placeholder text's own width —
+              // exactly what let this trigger overflow into a sibling
+              // field in several "add row" forms (packagings, movements,
+              // bundle components, tech cards...). Setting it here once
+              // means every caller gets correct shrink behavior by default
+              // instead of each call site having to remember min-w-0.
+              "w-full min-w-0 justify-between font-normal",
               !selected && "text-muted-foreground",
               className,
             )}

@@ -27,6 +27,7 @@ export default async function PrintCatalogLabelsPage({
 
   const catalogItems = await prisma.catalogItem.findMany({
     where: { id: { in: itemIds }, orgId: ctx.orgId },
+    include: { group: true, unit: true },
   });
   if (catalogItems.length === 0) notFound();
 
@@ -48,6 +49,8 @@ export default async function PrintCatalogLabelsPage({
     sku: item.sku,
     price: formatMoney(Number(item.unitPrice), item.currency),
     barcode: packagingId ? packagingBarcode : item.barcode,
+    group: item.group?.name ?? null,
+    unit: item.unit?.shortName ?? null,
     copies,
   }));
 

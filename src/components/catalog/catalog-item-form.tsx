@@ -148,8 +148,8 @@ export function CatalogItemForm({
                 type="number"
                 step="0.01"
                 min="0"
+                placeholder="0"
                 defaultValue={defaultValues?.unitPrice?.toString()}
-                required
               />
             </div>
             <div className="flex w-28 flex-col gap-2">

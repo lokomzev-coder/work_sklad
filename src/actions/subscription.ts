@@ -10,8 +10,8 @@ export interface SubscriptionActionResult {
 }
 
 /**
- * Блок Q — self-service purchase: picking a fixed plan or submitting a
- * "Свой тариф" selection both come through here. Deliberately does NOT
+ * Блок Q — self-service purchase: picking one of the platform admin's
+ * fixed plans. Deliberately does NOT
  * call assertPermission — gated on ctx.role === "ADMIN" directly (same
  * bar the read-only version of this page already used) so a RESTRICTED
  * org can still pay its way out of RESTRICTED; routing this through the

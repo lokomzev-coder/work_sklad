@@ -144,7 +144,7 @@ export function PackagingsEditor({
           </div>
         )}
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-2">
             <Label>Вид упаковки</Label>
             <PackagingTypeCombobox
@@ -154,28 +154,26 @@ export function PackagingsEditor({
               onChange={setPackagingTypeId}
             />
           </div>
-          <div className="flex gap-2">
-            <div className="flex flex-1 flex-col gap-2">
-              <Label>Количество</Label>
-              <Input
-                type="number"
-                step="0.001"
-                min="0"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                placeholder="Например, 30"
-              />
-            </div>
-            <div className="flex flex-1 flex-col gap-2">
-              <Label>Единица</Label>
-              <EntityCombobox
-                options={unitOptions}
-                value={unitId}
-                onChange={setUnitId}
-                placeholder="—"
-                emptyMessage="Единицы не найдены"
-              />
-            </div>
+          <div className="flex flex-col gap-2">
+            <Label>Количество</Label>
+            <Input
+              type="number"
+              step="0.001"
+              min="0"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              placeholder="Например, 30"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label>Единица</Label>
+            <EntityCombobox
+              options={unitOptions}
+              value={unitId}
+              onChange={setUnitId}
+              placeholder="—"
+              emptyMessage="Единицы не найдены"
+            />
           </div>
         </div>
         <div className="flex flex-col gap-2">

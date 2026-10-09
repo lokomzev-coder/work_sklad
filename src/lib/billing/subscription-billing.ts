@@ -20,35 +20,20 @@ import { Prisma } from "@/generated/prisma/client";
  * the ad hoc Number(decimal) conversions used elsewhere purely for display.
  */
 
-// Скрытая вместимость «Своего тарифа» до покупки доп. мест — не вынесено в
-// настройки панели, сознательный вырез объёма v1 (см. ROADMAP.md Block Q).
-const CUSTOM_PLAN_BASE_EMPLOYEES = 1;
-
 export interface InvoiceSelectionPlan {
   kind: "PLAN";
   planId: string;
 }
-export interface InvoiceSelectionCustomItem {
-  catalogItemId: string;
-  quantity: number;
-}
-export interface InvoiceSelectionCustom {
-  kind: "CUSTOM";
-  items: InvoiceSelectionCustomItem[];
-}
 /**
- * Block S — same materialization as CUSTOM (a fresh private isCustom plan
- * built from catalog items), except the starting point is the org's
- * CURRENT plan's features/maxEmployees instead of a blank slate — buying a
- * feature "on top of" whatever tariff is already active, rather than
- * building a whole new one from scratch. Priced only by the NEW item(s),
- * not the whole resulting plan — the org already paid for what it had.
+ * Block V (explicit request, 2026-09-21) — the "Свой тариф" constructor and
+ * the separate add-on-purchase list (CUSTOM/ADD_ON selection kinds) are
+ * gone: an org can only buy one of the platform admin's fixed tariffs now,
+ * МойСклад-style. `InvoiceSelection` is kept as its own type (rather than
+ * inlining `{ kind: "PLAN"; planId }` at every call site) purely so a
+ * future selection kind — e.g. a real payment-provider checkout — has one
+ * obvious place to extend, per docs/handbook/payment-provider-setup.md.
  */
-export interface InvoiceSelectionAddOn {
-  kind: "ADD_ON";
-  items: InvoiceSelectionCustomItem[];
-}
-export type InvoiceSelection = InvoiceSelectionPlan | InvoiceSelectionCustom | InvoiceSelectionAddOn;
+export type InvoiceSelection = InvoiceSelectionPlan;
 
 export interface BillingResult {
   error?: string;
@@ -77,106 +62,21 @@ export async function createOrDraftInvoice(
     return { error: "Организация не найдена" };
   }
 
-  let planId: string;
-  let amount: Prisma.Decimal;
-  let currency: string;
-  let planSnapshot: Record<string, unknown>;
-
-  if (selection.kind === "PLAN") {
-    const plan = await prisma.subscriptionPlan.findUnique({ where: { id: selection.planId } });
-    if (!plan || plan.isCustom) {
-      return { error: "Тариф не найден" };
-    }
-    planId = plan.id;
-    amount = plan.priceMonthly;
-    currency = plan.currency;
-    planSnapshot = {
-      name: plan.name,
-      maxEmployees: plan.maxEmployees,
-      maxOrdersPerMonth: plan.maxOrdersPerMonth,
-      features: plan.features,
-      priceMonthly: plan.priceMonthly.toString(),
-      currency: plan.currency,
-    };
-  } else {
-    if (selection.items.length === 0) {
-      return { error: "Выберите хотя бы одну функцию тарифа" };
-    }
-    const ids = selection.items.map((i) => i.catalogItemId);
-    const catalogItems = await prisma.subscriptionFeatureCatalogItem.findMany({
-      where: { id: { in: ids }, status: "ACTIVE" },
-    });
-    if (catalogItems.length !== new Set(ids).size) {
-      return { error: "Один или несколько выбранных пунктов недоступны" };
-    }
-
-    // ADD_ON starts from the org's CURRENT plan (features it already has,
-    // employee seats it already paid for) instead of a blank slate — the
-    // invoice below is only for the NEW item(s), never re-charging what's
-    // already active. CUSTOM starts from nothing, same as before.
-    const currentFeatures =
-      selection.kind === "ADD_ON" &&
-      org.subscriptionPlan?.features &&
-      typeof org.subscriptionPlan.features === "object" &&
-      !Array.isArray(org.subscriptionPlan.features)
-        ? { ...(org.subscriptionPlan.features as Record<string, boolean>) }
-        : {};
-    const baseEmployees =
-      selection.kind === "ADD_ON" ? (org.subscriptionPlan?.maxEmployees ?? CUSTOM_PLAN_BASE_EMPLOYEES) : CUSTOM_PLAN_BASE_EMPLOYEES;
-    const baseMaxOrders = selection.kind === "ADD_ON" ? (org.subscriptionPlan?.maxOrdersPerMonth ?? null) : null;
-
-    let total = new Prisma.Decimal(0);
-    let extraSeats = 0;
-    const features: Record<string, boolean> = currentFeatures;
-    for (const sel of selection.items) {
-      const item = catalogItems.find((c) => c.id === sel.catalogItemId)!;
-      if (item.kind === "EXTRA_EMPLOYEE_SEAT") {
-        const quantity = Math.max(1, Math.floor(sel.quantity));
-        extraSeats += quantity;
-        total = total.plus(item.unitPrice.times(quantity));
-      } else {
-        features[item.key] = true;
-        total = total.plus(item.unitPrice);
-      }
-    }
-
-    const maxEmployees = baseEmployees == null ? null : baseEmployees + extraSeats;
-    // Always a fresh row per new configuration (never mutated in place) —
-    // a historical invoice's `plan` relation must never silently change
-    // under it if the org later buys another add-on or edits their
-    // constructor selection again; planSnapshot on the invoice already
-    // freezes the numbers for display, this keeps the underlying row
-    // frozen too. `SubscriptionPlan.name` is globally @unique, so a
-    // second purchase for the SAME org (another add-on, or editing the
-    // constructor selection again) must not reuse the exact same name as
-    // an earlier one of its own private plans — a millisecond timestamp
-    // suffix is enough for what's an internal bookkeeping label, never
-    // shown as a real product name (isCustom plans are hidden from the
-    // shared /admin/plans catalog and the org-facing fixed-plan picker).
-    const planName = `Свой тариф — ${org.name} (${Date.now()})`;
-    const customPlan = await prisma.subscriptionPlan.create({
-      data: {
-        name: planName,
-        maxEmployees,
-        maxOrdersPerMonth: baseMaxOrders,
-        features,
-        priceMonthly: total,
-        currency: org.baseCurrency,
-        isCustom: true,
-      },
-    });
-    planId = customPlan.id;
-    amount = total;
-    currency = org.baseCurrency;
-    planSnapshot = {
-      name: customPlan.name,
-      maxEmployees,
-      maxOrdersPerMonth: baseMaxOrders,
-      features,
-      priceMonthly: total.toString(),
-      currency: org.baseCurrency,
-    };
+  const plan = await prisma.subscriptionPlan.findUnique({ where: { id: selection.planId } });
+  if (!plan || plan.isCustom) {
+    return { error: "Тариф не найден" };
   }
+  const planId = plan.id;
+  const amount = plan.priceMonthly;
+  const currency = plan.currency;
+  const planSnapshot: Record<string, unknown> = {
+    name: plan.name,
+    maxEmployees: plan.maxEmployees,
+    maxOrdersPerMonth: plan.maxOrdersPerMonth,
+    features: plan.features,
+    priceMonthly: plan.priceMonthly.toString(),
+    currency: plan.currency,
+  };
 
   if (currency !== org.baseCurrency) {
     return {
@@ -205,7 +105,12 @@ export async function createOrDraftInvoice(
       amount,
       currency,
       status: "PENDING",
-      isAddOn: selection.kind === "ADD_ON",
+      // Block V — always false going forward now that ADD_ON selections no
+      // longer exist; attemptSettleInvoice's own isAddOn branch below is
+      // left in place purely to keep any pre-existing PAID add-on invoice
+      // rows interpreting correctly on a later retry, not because new
+      // invoices can ever set it.
+      isAddOn: false,
     },
   });
 

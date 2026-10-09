@@ -1,10 +1,11 @@
 import { z } from "zod";
 
-/** The fields a "field" element can bind to — deliberately a small v1 set
- * (name/sku/price/barcode-as-text); packaging-specific fields are left out
- * on purpose (can be added as a static text element, or as a real field
+/** The fields a "field" element can bind to. Block W (explicit request,
+ * 2026-09-22) added group/unit on top of the original v1 set
+ * (name/sku/price/barcode-as-text); packaging-specific fields are still left
+ * out on purpose (can be added as a static text element, or as a real field
  * type in a later request — see ROADMAP.md's scope note). */
-export const LABEL_FIELD_KEYS = ["name", "sku", "price", "barcode"] as const;
+export const LABEL_FIELD_KEYS = ["name", "sku", "price", "barcode", "group", "unit"] as const;
 export type LabelFieldKey = (typeof LABEL_FIELD_KEYS)[number];
 
 export const LABEL_FIELD_LABELS: Record<LabelFieldKey, string> = {
@@ -12,6 +13,8 @@ export const LABEL_FIELD_LABELS: Record<LabelFieldKey, string> = {
   sku: "Артикул",
   price: "Цена",
   barcode: "Штрихкод (текст)",
+  group: "Группа/категория",
+  unit: "Единица измерения",
 };
 
 export type LabelElementType = "text" | "field" | "barcode";
@@ -70,4 +73,6 @@ export const SAMPLE_LABEL_VALUES: Record<LabelFieldKey, string> = {
   sku: "ART-001",
   price: "100.00 ₽",
   barcode: "2000000000008",
+  group: "Образец группы",
+  unit: "шт",
 };

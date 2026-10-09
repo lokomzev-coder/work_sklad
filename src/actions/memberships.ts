@@ -16,18 +16,23 @@ const LOGIN_REGEX = /^[a-z0-9](?:[a-z0-9._-]{0,48}[a-z0-9])?$/;
 const grantSchema = z.object({
   login: z.string().trim().toLowerCase().regex(LOGIN_REGEX, "Логин: латиница/цифры, без пробелов и @"),
   email: z.email("Некорректный email"),
-  password: z.string().trim().min(8, "Минимум 8 символов").max(200).optional(),
+  password: z.string().trim().min(8, "Минимум 8 символов").max(200),
   role: z.enum(["ADMIN", "MANAGER", "EMPLOYEE", "PRODUCTION", "CASHIER"]),
   customRoleId: z.string().optional(),
 });
 
 /**
- * Grants an existing Employee a personal login (Block I self-service). If a
- * User already exists with this email (they're already on the platform in
- * another org), the Membership links to that existing account and the
- * submitted password is ignored — inviting someone doesn't get to set their
- * password for them. Otherwise a brand-new User is created and `password`
- * is required.
+ * Grants an existing Employee a personal login (Block I self-service).
+ * Block W (explicit request, 2026-09-22) — always creates a brand-new User;
+ * used to look up an existing User by this same email and link to that
+ * account instead (skipping the password) when found, back when email was a
+ * unique platform-wide identity. Email is no longer unique — the same
+ * string can now legitimately belong to several different people (e.g. a
+ * shared office inbox), so "an existing User has this email" is no longer a
+ * safe signal that it's the SAME person asking for a second org's access.
+ * A genuine "I already have an account, just add me to this org" flow would
+ * need its own explicit mechanism (an invite link, or the person logging in
+ * and requesting access) — not a silent email match.
  */
 export async function grantEmployeeAccess(
   orgSlug: string,
@@ -61,19 +66,13 @@ export async function grantEmployeeAccess(
     if (!role) return { error: "Роль не найдена" };
   }
 
-  const existingUser = await prisma.user.findUnique({ where: { email: parsed.data.email } });
-  if (!existingUser && !parsed.data.password) {
-    return { error: "Введите пароль для нового пользователя" };
-  }
-  const passwordHash = existingUser ? null : await bcrypt.hash(parsed.data.password!, 12);
+  const passwordHash = await bcrypt.hash(parsed.data.password, 12);
 
   try {
     await prisma.$transaction(async (tx) => {
-      const user =
-        existingUser ??
-        (await tx.user.create({
-          data: { name: employee.fullName, email: parsed.data.email, passwordHash: passwordHash! },
-        }));
+      const user = await tx.user.create({
+        data: { name: employee.fullName, email: parsed.data.email, passwordHash },
+      });
       await tx.membership.create({
         data: {
           userId: user.id,

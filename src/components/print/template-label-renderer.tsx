@@ -11,6 +11,8 @@ export interface LabelPrintItem {
   sku: string | null;
   price: string;
   barcode: string | null;
+  group: string | null;
+  unit: string | null;
   copies: number;
 }
 
@@ -25,6 +27,8 @@ function fieldValue(item: LabelPrintItem, field: LabelFieldKey): string {
   if (field === "name") return item.name;
   if (field === "sku") return item.sku ?? "—";
   if (field === "price") return item.price;
+  if (field === "group") return item.group ?? "—";
+  if (field === "unit") return item.unit ?? "—";
   return item.barcode ?? "—";
 }
 

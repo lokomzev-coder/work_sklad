@@ -115,12 +115,12 @@ function GrantAccessForm({
               <Input id="access-login" name="login" placeholder="ivan" required />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="access-email">Email</Label>
+              <Label htmlFor="access-email">Email (для связи и сброса пароля)</Label>
               <Input id="access-email" name="email" type="email" required />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="access-password">Пароль (для нового пользователя)</Label>
-              <Input id="access-password" name="password" type="password" />
+              <Label htmlFor="access-password">Пароль</Label>
+              <Input id="access-password" name="password" type="password" required />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Базовая роль</Label>

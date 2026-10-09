@@ -13,9 +13,8 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { formatMoney } from "@/lib/format";
+import { getStorageUsageMb } from "@/lib/subscription";
 import { SubscriptionPlanPicker } from "@/components/settings/subscription-plan-picker";
-import { CustomPlanBuilder } from "@/components/settings/custom-plan-builder";
-import { AddOnFeaturesSection } from "@/components/settings/add-on-features-section";
 
 const ACTION_LABEL: Record<string, string> = {
   GRANTED: "Выдана",
@@ -33,19 +32,28 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
 /**
  * Блок Q — self-service subscription: balance, current state (trial/
  * active/grace/restricted, computed by resolveSubscriptionState and
- * already carried on ctx from getOrgContext), fixed-plan picker, "Свой
- * тариф" constructor, and invoice/balance history for transparency (same
- * principle Блок L фаза 3 already applied to the tariff-change log).
+ * already carried on ctx from getOrgContext), fixed-plan picker, and
+ * invoice/balance history for transparency (same principle Блок L фаза 3
+ * already applied to the tariff-change log).
  * Balance top-up itself stays support-only text — no payment provider and
  * no in-app messaging system to route such a request yet (see
  * docs/handbook/payment-provider-setup.md).
+ *
+ * Block V (explicit request, 2026-09-21) — removed the "Свой тариф"
+ * constructor and the separate add-on-purchase list entirely: the org can
+ * only pick one of the platform admin's fixed tariffs now, МойСклад-style.
+ * Everything a constructor selection used to configure ad hoc (feature
+ * flags, employee seats) is now just what the chosen plan's own row says —
+ * see SubscriptionPlanForm/subscription-plan-picker for the admin/org sides
+ * of the same fixed-tariff table.
  */
 export default async function OrgSubscriptionPage({ params }: { params: Promise<{ org: string }> }) {
   const { org: orgSlug } = await params;
   const ctx = await getOrgContext(orgSlug);
   if (ctx.role !== "ADMIN") notFound();
 
-  const [organization, history, invoices, balanceTransactions, plans, catalogItems] = await Promise.all([
+  const [organization, history, invoices, balanceTransactions, plans, catalogItems, storageUsedMb] =
+    await Promise.all([
     prisma.organization.findUnique({ where: { id: ctx.orgId } }),
     prisma.subscriptionChangeLog.findMany({
       where: { orgId: ctx.orgId },
@@ -65,6 +73,7 @@ export default async function OrgSubscriptionPage({ params }: { params: Promise<
     }),
     prisma.subscriptionPlan.findMany({ where: { isCustom: false }, orderBy: { priceMonthly: "asc" } }),
     prisma.subscriptionFeatureCatalogItem.findMany({ where: { status: "ACTIVE" }, orderBy: { label: "asc" } }),
+    getStorageUsageMb(ctx.orgId),
   ]);
   if (!organization) notFound();
 
@@ -75,9 +84,6 @@ export default async function OrgSubscriptionPage({ params }: { params: Promise<
     label: i.label,
     includedInAllPlans: i.includedInAllPlans,
   }));
-  const addOnItems = featureCatalogItems.filter(
-    (i) => !i.includedInAllPlans && !ctx.enabledFeatures.has(i.key),
-  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -139,6 +145,17 @@ export default async function OrgSubscriptionPage({ params }: { params: Promise<
               {state.plan.maxEmployees && (
                 <div className="text-muted-foreground">Лимит сотрудников: {state.plan.maxEmployees}</div>
               )}
+              {state.plan.maxStorageMb != null && (
+                <div className="text-muted-foreground">
+                  Хранилище: {storageUsedMb.toFixed(1)} МБ из {state.plan.maxStorageMb} МБ
+                </div>
+              )}
+              {state.plan.maxStores != null && (
+                <div className="text-muted-foreground">Лимит точек продаж: {state.plan.maxStores}</div>
+              )}
+              {state.plan.maxLegalEntities != null && (
+                <div className="text-muted-foreground">Лимит юридических лиц: {state.plan.maxLegalEntities}</div>
+              )}
               {state.kind === "ACTIVE" && organization.subscriptionExpiresAt && (
                 <div className="text-muted-foreground">
                   Действует до: {organization.subscriptionExpiresAt.toLocaleDateString("ru-RU")}
@@ -165,48 +182,14 @@ export default async function OrgSubscriptionPage({ params }: { params: Promise<
               currency: p.currency,
               maxEmployees: p.maxEmployees,
               maxOrdersPerMonth: p.maxOrdersPerMonth,
+              maxStores: p.maxStores,
+              maxLegalEntities: p.maxLegalEntities,
               features:
                 p.features && typeof p.features === "object" && !Array.isArray(p.features)
                   ? (p.features as Record<string, boolean>)
                   : {},
             }))}
             featureRows={featureRows}
-          />
-        </CardContent>
-      </Card>
-
-      <AddOnFeaturesSection
-        orgSlug={orgSlug}
-        items={addOnItems.map((i) => ({
-          id: i.id,
-          label: i.label,
-          description: i.description,
-          unitPrice: i.unitPrice.toString(),
-          currency: organization.baseCurrency,
-        }))}
-      />
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Свой тариф</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <CustomPlanBuilder
-            orgSlug={orgSlug}
-            currency={organization.baseCurrency}
-            items={catalogItems
-              // Block S — items free for every org (includedInAllPlans)
-              // aren't offered here to "buy" — the constructor is only
-              // for what actually costs something.
-              .filter((i) => !i.includedInAllPlans)
-              .map((i) => ({
-                id: i.id,
-                key: i.key,
-                label: i.label,
-                description: i.description,
-                kind: i.kind,
-                unitPrice: i.unitPrice.toString(),
-              }))}
           />
         </CardContent>
       </Card>

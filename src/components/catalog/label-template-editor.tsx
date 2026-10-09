@@ -72,6 +72,16 @@ export function LabelTemplateEditor({ orgSlug, templateId, initialValues }: Labe
   const dragState = useRef<{ id: string; startPointerX: number; startPointerY: number; startX: number; startY: number } | null>(
     null,
   );
+  // Block W — same idea as dragState, but for the resize handle: tracks the
+  // element's starting width/height instead of x/y, so handlePointerMove
+  // can tell which one is active and adjust the right pair of fields.
+  const resizeState = useRef<{
+    id: string;
+    startPointerX: number;
+    startPointerY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
 
   const selected = elements.find((el) => el.id === selectedId) ?? null;
 
@@ -119,6 +129,17 @@ export function LabelTemplateEditor({ orgSlug, templateId, initialValues }: Labe
   }
 
   function handlePointerMove(e: React.PointerEvent) {
+    const resize = resizeState.current;
+    if (resize) {
+      const el = elements.find((x) => x.id === resize.id);
+      if (!el) return;
+      const deltaMmX = (e.clientX - resize.startPointerX) / PX_PER_MM;
+      const deltaMmY = (e.clientY - resize.startPointerY) / PX_PER_MM;
+      const nextWidth = Math.min(Math.max(1, resize.startWidth + deltaMmX), Math.max(1, widthMm - el.x));
+      const nextHeight = Math.min(Math.max(1, resize.startHeight + deltaMmY), Math.max(1, heightMm - el.y));
+      updateElement(resize.id, { width: nextWidth, height: nextHeight });
+      return;
+    }
     const drag = dragState.current;
     if (!drag) return;
     const el = elements.find((x) => x.id === drag.id);
@@ -132,6 +153,20 @@ export function LabelTemplateEditor({ orgSlug, templateId, initialValues }: Labe
 
   function handlePointerUp() {
     dragState.current = null;
+    resizeState.current = null;
+  }
+
+  function handleResizePointerDown(e: React.PointerEvent, el: LabelElement) {
+    e.stopPropagation();
+    setSelectedId(el.id);
+    resizeState.current = {
+      id: el.id,
+      startPointerX: e.clientX,
+      startPointerY: e.clientY,
+      startWidth: el.width,
+      startHeight: el.height,
+    };
+    (e.target as Element).setPointerCapture(e.pointerId);
   }
 
   function renderElementContent(el: LabelElement) {
@@ -232,6 +267,12 @@ export function LabelTemplateEditor({ orgSlug, templateId, initialValues }: Labe
             <div
               key={el.id}
               onPointerDown={(e) => handlePointerDown(e, el)}
+              // Block W — a plain click still fires (and bubbles to the
+              // canvas's own onClick deselect-all handler below) right after
+              // pointerdown/pointerup finish selecting this element;
+              // stopPropagation here is what actually keeps the Properties
+              // panel open instead of opening and immediately closing again.
+              onClick={(e) => e.stopPropagation()}
               className={`absolute cursor-move overflow-hidden border text-black ${
                 selectedId === el.id ? "border-primary border-2" : "border-gray-300"
               }`}
@@ -248,6 +289,12 @@ export function LabelTemplateEditor({ orgSlug, templateId, initialValues }: Labe
                 <BarcodePreview value={SAMPLE_LABEL_VALUES.barcode} />
               ) : (
                 renderElementContent(el)
+              )}
+              {selectedId === el.id && (
+                <div
+                  onPointerDown={(e) => handleResizePointerDown(e, el)}
+                  className="absolute -right-1 -bottom-1 size-3 cursor-nwse-resize rounded-sm border border-white bg-primary"
+                />
               )}
             </div>
           ))}

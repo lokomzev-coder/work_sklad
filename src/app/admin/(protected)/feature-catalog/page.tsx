@@ -19,9 +19,12 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * Блок Q — the building blocks the org-side "Свой тариф" constructor picks
- * from (src/lib/billing/subscription-billing.ts::createOrDraftInvoice).
- * Same manageSubscriptions capability and CRUD shape as /admin/plans.
+ * Block V — the catalog of feature KEYS that show up as checkboxes on
+ * /admin/plans/[id] (SubscriptionPlanForm) and as ✓/— rows on the org's
+ * fixed-plan picker. `includedInAllPlans` is the only thing about an item
+ * that changes real behavior (lib/subscription.ts::resolveEnabledFeatures);
+ * `kind`/`unitPrice` are historical fields from the removed "Свой тариф"
+ * constructor, left read-only here for any pre-existing rows.
  */
 export default async function FeatureCatalogPage() {
   const ctx = await getPlatformAdminContext();
@@ -35,12 +38,12 @@ export default async function FeatureCatalogPage() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Каталог функций конструктора</h1>
+        <h1 className="text-2xl font-semibold">Каталог функций</h1>
         <CreateFeatureCatalogItemInline />
       </div>
       <p className="text-sm text-muted-foreground">
-        Пункты, из которых организация собирает «Свой тариф» на странице подписки — сумма выбранных пунктов
-        становится ценой тарифа.
+        Ключи функций, которые можно включить/выключить у каждого тарифа на странице «Тарифы». «Включено всем» делает
+        функцию бесплатной и доступной для любой организации независимо от тарифа.
       </p>
 
       <div className="rounded-md border">

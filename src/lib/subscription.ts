@@ -16,6 +16,11 @@ export interface SubscriptionPlanLike {
   currency: string;
   maxEmployees: number | null;
   maxOrdersPerMonth: number | null;
+  // Block U — see checkStorageLimit below.
+  maxStorageMb: number | null;
+  // Block V — see checkStoreLimit/checkLegalEntityLimit below.
+  maxStores: number | null;
+  maxLegalEntities: number | null;
   // Block S — Record<featureKey, boolean>, matches
   // SubscriptionFeatureCatalogItem.key. See resolveEnabledFeatures below.
   features: Prisma.JsonValue;
@@ -89,6 +94,13 @@ export const KNOWN_FEATURE_KEYS = {
   retail: "retail",
   production: "production",
   customRoles: "custom_roles",
+  // Block V (explicit request, 2026-09-21) — matches МойСклад's "Управление
+  // правами пользователей"/"Автоматические сценарии"/"Дополнительные
+  // поля"/"Собственные шаблоны" rows; gated at each feature's one creation
+  // call site the same way customRoles already was (Block S).
+  scenarios: "scenarios",
+  customFields: "custom_fields",
+  labelTemplates: "label_templates",
 } as const;
 
 /**
@@ -153,6 +165,100 @@ export async function checkEmployeeLimit(orgId: string): Promise<{ ok: true } | 
     return {
       ok: false,
       error: `Тариф «${org!.subscriptionPlan!.name}» позволяет не больше ${maxEmployees} сотрудников — обратитесь к администратору для смены тарифа`,
+    };
+  }
+  return { ok: true };
+}
+
+const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * Block U (explicit request, 2026-09-21) — same shape/convention as
+ * checkEmployeeLimit above (null = unlimited, fail-open on no plan). Counts
+ * every Attachment row for the org regardless of entityType: uploaded
+ * files, catalog item images, AND generated export/import-template files
+ * (Block U's export feature saves those as ordinary Attachment rows for
+ * exactly this reason — one table, one quota, no separate accounting path
+ * to keep in sync).
+ */
+export async function checkStorageLimit(
+  orgId: string,
+  additionalBytes = 0,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { subscriptionPlan: { select: { name: true, maxStorageMb: true } } },
+  });
+  const maxStorageMb = org?.subscriptionPlan?.maxStorageMb;
+  if (maxStorageMb == null) {
+    return { ok: true };
+  }
+
+  const { _sum } = await prisma.attachment.aggregate({
+    where: { orgId },
+    _sum: { sizeBytes: true },
+  });
+  const usedBytes = (_sum.sizeBytes ?? 0) + additionalBytes;
+  if (usedBytes > maxStorageMb * BYTES_PER_MB) {
+    return {
+      ok: false,
+      error: `Тариф «${org!.subscriptionPlan!.name}» позволяет не больше ${maxStorageMb} МБ хранилища — освободите место или обратитесь к администратору для смены тарифа`,
+    };
+  }
+  return { ok: true };
+}
+
+/** Current usage, for display on the org's subscription page (Block U). */
+export async function getStorageUsageMb(orgId: string): Promise<number> {
+  const { _sum } = await prisma.attachment.aggregate({
+    where: { orgId },
+    _sum: { sizeBytes: true },
+  });
+  return (_sum.sizeBytes ?? 0) / BYTES_PER_MB;
+}
+
+/**
+ * Block V (explicit request, 2026-09-21) — "точки продаж" resource limit,
+ * same shape/convention as checkEmployeeLimit (null = unlimited, fail-open
+ * on no plan). Counts ACTIVE Stores only — an archived store doesn't count
+ * against the quota, same idea as Employee's ACTIVE-only count.
+ */
+export async function checkStoreLimit(orgId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { subscriptionPlan: { select: { name: true, maxStores: true } } },
+  });
+  const maxStores = org?.subscriptionPlan?.maxStores;
+  if (maxStores == null) {
+    return { ok: true };
+  }
+
+  const currentCount = await prisma.store.count({ where: { orgId, status: "ACTIVE" } });
+  if (currentCount >= maxStores) {
+    return {
+      ok: false,
+      error: `Тариф «${org!.subscriptionPlan!.name}» позволяет не больше ${maxStores} точек продаж — обратитесь к администратору для смены тарифа`,
+    };
+  }
+  return { ok: true };
+}
+
+/** Block V — "юридические лица" resource limit, same shape as checkStoreLimit. */
+export async function checkLegalEntityLimit(orgId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { subscriptionPlan: { select: { name: true, maxLegalEntities: true } } },
+  });
+  const maxLegalEntities = org?.subscriptionPlan?.maxLegalEntities;
+  if (maxLegalEntities == null) {
+    return { ok: true };
+  }
+
+  const currentCount = await prisma.legalEntity.count({ where: { orgId, status: "ACTIVE" } });
+  if (currentCount >= maxLegalEntities) {
+    return {
+      ok: false,
+      error: `Тариф «${org!.subscriptionPlan!.name}» позволяет не больше ${maxLegalEntities} юридических лиц — обратитесь к администратору для смены тарифа`,
     };
   }
   return { ok: true };

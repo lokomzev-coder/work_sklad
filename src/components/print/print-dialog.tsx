@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type DocumentType = "order" | "purchaseOrder" | "productionOrder" | "invoiceOut" | "invoiceIn";
+type DocumentType = "order" | "purchaseOrder" | "productionOrder" | "invoiceOut" | "invoiceIn" | "stockMovement";
 
 const PRINT_PATH: Record<DocumentType, string> = {
   order: "orders",
@@ -27,6 +27,7 @@ const PRINT_PATH: Record<DocumentType, string> = {
   productionOrder: "production-orders",
   invoiceOut: "invoices-out",
   invoiceIn: "invoices-in",
+  stockMovement: "warehouse",
 };
 
 // Block M5: invoices get the legal-entity override (they have their own
@@ -35,6 +36,17 @@ const PRINT_PATH: Record<DocumentType, string> = {
 // M4); an invoice is a pure billing document with no such moment.
 const LEGAL_ENTITY_TYPES = new Set<DocumentType>(["order", "purchaseOrder", "invoiceOut", "invoiceIn"]);
 const LABEL_TYPES = new Set<DocumentType>(["order", "purchaseOrder"]);
+// Block U — ENTER/LOSS/MOVE/INVENTORY movements have no price at all
+// (StockMovementLine.unitPriceSnapshot is explicitly null for all four,
+// see schema comment) — showing a "Показывать цены" toggle that does
+// nothing would just be confusing, so stockMovement opts out of it.
+const PRICE_TOGGLE_TYPES = new Set<DocumentType>([
+  "order",
+  "purchaseOrder",
+  "productionOrder",
+  "invoiceOut",
+  "invoiceIn",
+]);
 
 const LABEL_MODE_ITEMS = { unit: "На каждую единицу", line: "По позициям" };
 
@@ -84,11 +96,12 @@ export function PrintDialog({
   const basePath = `/print/${PRINT_PATH[documentType]}/${orgSlug}/${documentId}`;
   const supportsLegalEntity = LEGAL_ENTITY_TYPES.has(documentType);
   const supportsLabels = LABEL_TYPES.has(documentType);
+  const supportsPriceToggle = PRICE_TOGGLE_TYPES.has(documentType);
 
   const docHref = (() => {
     const qs = new URLSearchParams();
     if (supportsLegalEntity && legalEntityId) qs.set("legalEntityId", legalEntityId);
-    if (!showPrices) qs.set("prices", "0");
+    if (supportsPriceToggle && !showPrices) qs.set("prices", "0");
     const query = qs.toString();
     return query ? `${basePath}?${query}` : basePath;
   })();
@@ -130,7 +143,7 @@ export function PrintDialog({
           </Select>
         </div>
       )}
-      {priceCheckbox}
+      {supportsPriceToggle && priceCheckbox}
       <div className="flex gap-2">
         <Button
           type="button"

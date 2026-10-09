@@ -40,11 +40,6 @@ export async function registerAction(
 
   const { name, login, email, password, orgName } = parsed.data;
 
-  const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
-    return { error: "Пользователь с таким email уже существует" };
-  }
-
   const passwordHash = await bcrypt.hash(password, 12);
   const slug = await uniqueSlug(slugify(orgName));
 
@@ -67,8 +62,21 @@ export async function registerAction(
         trialEndsAt: new Date(Date.now() + TRIAL_DAYS * 86_400_000),
       },
     });
+    // Block W (explicit request, 2026-09-22) — the founding admin gets a
+    // real Employee record from the start, same as any other person added
+    // later, instead of a Membership with no employeeId at all. Without
+    // this, actions requiring ctx.employeeId for attribution (uploads,
+    // tasks, cash orders, comments, counterparty adjustments) were simply
+    // unusable by the org's own founder until someone manually linked one —
+    // and there was no self-service way to do that either (see
+    // linkMyEmployee, added alongside this fix). Counts toward
+    // checkEmployeeLimit like any other Employee row — no special-casing,
+    // it's a real seat.
+    const employee = await tx.employee.create({
+      data: { orgId: org.id, fullName: name },
+    });
     await tx.membership.create({
-      data: { userId: user.id, orgId: org.id, role: "ADMIN", login },
+      data: { userId: user.id, orgId: org.id, role: "ADMIN", login, employeeId: employee.id },
     });
   });
 

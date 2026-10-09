@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { assertFeatureEnabled, KNOWN_FEATURE_KEYS } from "@/lib/subscription";
 
 export interface ActionResult {
   error?: string;
@@ -61,6 +62,7 @@ export async function createScenarioRule(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "scenarios", "create");
+  assertFeatureEnabled(ctx, KNOWN_FEATURE_KEYS.scenarios);
 
   const parsed = createScenarioRuleSchema.safeParse(input);
   if (!parsed.success) {

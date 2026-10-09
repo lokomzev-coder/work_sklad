@@ -17,7 +17,7 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
     ...(ctx.capabilities.manageSubscriptions
       ? [
           { href: `${base}/plans`, label: "Тарифы" },
-          { href: `${base}/feature-catalog`, label: "Конструктор" },
+          { href: `${base}/feature-catalog`, label: "Каталог функций" },
         ]
       : []),
     ...(ctx.capabilities.manageAdmins

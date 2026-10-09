@@ -33,12 +33,12 @@ export interface UpsertFeatureCatalogItemInput {
 }
 
 /**
- * Блок Q — CRUD for the "Свой тариф" constructor's building blocks, same
- * shape as upsertSubscriptionPlan (actions/platform-subscription-plans.ts).
- * Deletion is refused, same principle as deletePlatformRole/
- * deleteSubscriptionPlan — archiving (status ARCHIVED) is how you retire an
+ * Block V — CRUD for the feature-key catalog (checkboxes on a plan's edit
+ * page, ✓/— rows on the org's fixed-plan picker), same shape as
+ * upsertSubscriptionPlan (actions/platform-subscription-plans.ts).
+ * Archiving (status ARCHIVED) rather than deleting is how you retire an
  * item without invalidating historical invoices' planSnapshot, which
- * already froze whatever this item meant at the time it was purchased.
+ * already froze whatever this item meant when a plan using it was bought.
  */
 export async function upsertFeatureCatalogItem(
   id: string | null,

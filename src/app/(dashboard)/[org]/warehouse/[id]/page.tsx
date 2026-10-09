@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
+import { can } from "@/lib/permissions";
 import { getItemBalanceAtStore, getReservedQuantitiesByStore } from "@/lib/stock";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,6 +14,8 @@ import { getComments } from "@/lib/comments";
 import { EventFeed } from "@/components/comments/event-feed";
 import { listAttachments } from "@/lib/attachments";
 import { AttachmentList } from "@/components/attachments/attachment-list";
+import { PrintDialog } from "@/components/print/print-dialog";
+import { InventoryCorrectionsButton } from "@/components/warehouse/inventory-corrections-button";
 import {
   Table,
   TableHeader,
@@ -50,6 +53,8 @@ export default async function MovementDetailPage({
       toStore: true,
       order: true,
       purchaseOrder: true,
+      sourceInventory: true,
+      correctionDocuments: true,
       lines: {
         include: {
           catalogItem: true,
@@ -141,6 +146,23 @@ export default async function MovementDetailPage({
     draftSupplyEditorProps = { storeOptions: stores.map((s) => ({ value: s.id, label: s.name })), lines };
   }
 
+  // Block U — print form only exists for the four manual document types
+  // (movement-form.tsx), and only once posted — a draft isn't a finished
+  // document yet (same reasoning as every other document's print button
+  // only appearing on the non-draft branch).
+  const isPrintableManualType = ["ENTER", "LOSS", "MOVE", "INVENTORY"].includes(movement.type);
+  const canPrint = isPrintableManualType && movement.isPosted;
+
+  // Block W — "Создать документ": only offered once (no corrections yet),
+  // only when posted, and only when there's an actual discrepancy to fix.
+  const hasDiscrepancies = movement.lines.some((l) => Number(l.quantity) !== 0);
+  const canCreateCorrections =
+    movement.type === "INVENTORY" &&
+    movement.isPosted &&
+    hasDiscrepancies &&
+    movement.correctionDocuments.length === 0 &&
+    can(ctx, "warehouse", "create");
+
   return (
     <div className="flex max-w-2xl flex-col gap-4">
       <div className="flex items-center gap-3">
@@ -151,6 +173,8 @@ export default async function MovementDetailPage({
         <Badge variant="secondary">
           {movement.createdAt.toLocaleDateString("ru-RU")}
         </Badge>
+        {canPrint && <PrintDialog documentType="stockMovement" orgSlug={org} documentId={movement.id} />}
+        {canCreateCorrections && <InventoryCorrectionsButton orgSlug={org} inventoryId={movement.id} />}
       </div>
 
       <Card>
@@ -184,6 +208,27 @@ export default async function MovementDetailPage({
             <div>
               <span className="text-muted-foreground">Комментарий: </span>
               {movement.comment}
+            </div>
+          )}
+          {movement.sourceInventory && (
+            <div>
+              <span className="text-muted-foreground">Создано по инвентаризации: </span>
+              <Link href={`/${org}/warehouse/${movement.sourceInventory.id}`} className="underline">
+                №{movement.sourceInventory.number}
+              </Link>
+            </div>
+          )}
+          {movement.correctionDocuments.length > 0 && (
+            <div>
+              <span className="text-muted-foreground">Документы по расхождениям: </span>
+              {movement.correctionDocuments.map((doc, idx) => (
+                <span key={doc.id}>
+                  {idx > 0 && ", "}
+                  <Link href={`/${org}/warehouse/${doc.id}`} className="underline">
+                    {TYPE_LABEL[doc.type]} №{doc.number}
+                  </Link>
+                </span>
+              ))}
             </div>
           )}
         </CardContent>

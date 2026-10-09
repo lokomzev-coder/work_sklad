@@ -18,12 +18,20 @@ export interface StockBalanceRow {
 
 /**
  * Stock is never a stored, mutable number — it's always derived from the
- * StockMovementLine ledger: ENTER/INVENTORY/SUPPLY/SALES_RETURN/
- * PRODUCTION_OUTPUT/RETAIL_RETURN lines add `quantity` to storeId, LOSS/
- * MOVE/DEMAND/PURCHASE_RETURN/PRODUCTION_CONSUME/RETAIL_SALE subtract it
- * from storeId, and MOVE additionally adds it to toStoreId. Computing it on
- * the fly means it can never drift from its own history (see the schema
- * comment above the Store model).
+ * StockMovementLine ledger: ENTER/SUPPLY/SALES_RETURN/PRODUCTION_OUTPUT/
+ * RETAIL_RETURN lines add `quantity` to storeId, LOSS/MOVE/DEMAND/
+ * PURCHASE_RETURN/PRODUCTION_CONSUME/RETAIL_SALE subtract it from storeId,
+ * and MOVE additionally adds it to toStoreId. Computing it on the fly means
+ * it can never drift from its own history (see the schema comment above the
+ * Store model).
+ *
+ * Block W (explicit request, 2026-09-21) — INVENTORY lines are deliberately
+ * EXCLUDED from this ledger entirely (МойСклад-style): an inventory count is
+ * a pure comparison act (counted vs. expected), it never moves stock by
+ * itself. The actual correction only happens through separate ENTER/LOSS
+ * documents generated from it via "Создать документ"
+ * (actions/inventory-corrections.ts::createInventoryCorrections), which
+ * follow the normal ENTER/LOSS ledger rules like any other such document.
  *
  * Block M6: pass `byVariant: true` to group by (item, variant, store)
  * instead of just (item, store) — variantId is then either a real variant id
@@ -74,10 +82,10 @@ export async function getStockBalances(
   const rows = await prisma.$queryRaw<Omit<StockBalanceRow, "variantLabel">[]>(Prisma.sql`
     WITH deltas AS (
       SELECT sm."storeId" AS "storeId", l."catalogItemId" AS "catalogItemId", l."variantId" AS "variantId",
-        CASE WHEN sm.type IN ('ENTER', 'INVENTORY', 'SUPPLY', 'SALES_RETURN', 'PRODUCTION_OUTPUT', 'RETAIL_RETURN') THEN l.quantity ELSE -l.quantity END AS delta
+        CASE WHEN sm.type IN ('ENTER', 'SUPPLY', 'SALES_RETURN', 'PRODUCTION_OUTPUT', 'RETAIL_RETURN') THEN l.quantity ELSE -l.quantity END AS delta
       FROM "StockMovementLine" l
       JOIN "StockMovement" sm ON sm.id = l."movementId"
-      WHERE sm."orgId" = ${orgId} AND sm."isPosted" = true
+      WHERE sm."orgId" = ${orgId} AND sm."isPosted" = true AND sm.type != 'INVENTORY'
       UNION ALL
       SELECT sm."toStoreId" AS "storeId", l."catalogItemId" AS "catalogItemId", l."variantId" AS "variantId", l.quantity AS delta
       FROM "StockMovementLine" l

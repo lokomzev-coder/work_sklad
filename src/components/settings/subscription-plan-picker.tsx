@@ -16,6 +16,8 @@ export interface PlanPickerItem {
   currency: string;
   maxEmployees: number | null;
   maxOrdersPerMonth: number | null;
+  maxStores: number | null;
+  maxLegalEntities: number | null;
   // Block S — Record<featureKey, boolean>, same shape as
   // SubscriptionPlan.features — drives the ✓/— row per catalog feature.
   features: Record<string, boolean>;
@@ -34,8 +36,8 @@ export interface FeatureRow {
  * same call — the toast reflects whichever happened.
  *
  * Block S added the ✓/— feature comparison per card, reading from the same
- * catalog the admin's plan-edit checklist and the "Свой тариф" constructor
- * both already use — one list of feature rows, three different renderings.
+ * catalog the admin's plan-edit checklist already uses — one list of
+ * feature rows, two different renderings.
  */
 export function SubscriptionPlanPicker({
   orgSlug,
@@ -80,6 +82,8 @@ export function SubscriptionPlanPicker({
             <p className="text-lg font-semibold">{formatMoney(Number(plan.priceMonthly), plan.currency)} / мес</p>
             <p className="text-muted-foreground">Сотрудников: {plan.maxEmployees ?? "без лимита"}</p>
             <p className="text-muted-foreground">Заказов/мес: {plan.maxOrdersPerMonth ?? "без лимита"}</p>
+            <p className="text-muted-foreground">Точек продаж: {plan.maxStores ?? "без лимита"}</p>
+            <p className="text-muted-foreground">Юридических лиц: {plan.maxLegalEntities ?? "без лимита"}</p>
             {featureRows.length > 0 && (
               <ul className="flex flex-col gap-1 border-t pt-2">
                 {featureRows.map((f) => {

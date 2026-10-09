@@ -17,10 +17,11 @@ export default async function SubscriptionPlansPage() {
   const base = getAdminBasePath();
   assertPlatformPermission(ctx, "manageSubscriptions");
 
-  // Блок Q — private per-org plans materialized by the "Свой тариф"
-  // constructor are hidden here; they're not a shared, reusable catalog
-  // entry, just internal bookkeeping for one organization's custom
-  // selection (visible on that org's own detail page instead).
+  // Block V — the "Свой тариф" constructor that used to materialize these
+  // is gone, but any pre-existing isCustom rows stay hidden here; they're
+  // not a shared, reusable catalog entry, just internal bookkeeping for one
+  // organization's old custom selection (visible on that org's own detail
+  // page instead).
   const [plans, catalogItems] = await Promise.all([
     prisma.subscriptionPlan.findMany({
       where: { isCustom: false },

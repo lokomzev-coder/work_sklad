@@ -106,9 +106,6 @@ export async function createEmployee(
       const role = await prisma.customRole.findFirst({ where: { id: access.customRoleId, orgId: ctx.orgId } });
       if (!role) return { error: "Роль не найдена" };
     }
-    if (await prisma.user.findUnique({ where: { email: access.accessEmail } })) {
-      return { error: "Этот email для входа уже используется другим аккаунтом" };
-    }
   }
 
   const passwordHash = access ? await bcrypt.hash(access.password, 12) : null;

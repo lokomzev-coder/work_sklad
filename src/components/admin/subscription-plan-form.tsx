@@ -7,13 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Slider } from "@/components/ui/slider";
 import { upsertSubscriptionPlan } from "@/actions/platform-subscription-plans";
+
+// Block U — slider's own practical range (a "typical plan" ballpark); the
+// numeric field next to it still accepts any value beyond this, same idea
+// as a volume slider that tops out at 100% but the field takes overrides.
+const STORAGE_SLIDER_MAX_MB = 10240;
+const STORAGE_SLIDER_STEP_MB = 64;
 
 export interface SubscriptionPlanFormValues {
   id: string;
   name: string;
   maxEmployees: number | null;
   maxOrdersPerMonth: number | null;
+  maxStorageMb: number | null;
+  maxStores: number | null;
+  maxLegalEntities: number | null;
   priceMonthly: string;
   currency: string;
   features: Record<string, boolean>;
@@ -40,6 +50,10 @@ export function SubscriptionPlanForm({
   const [name, setName] = useState(plan?.name ?? "");
   const [maxEmployees, setMaxEmployees] = useState(plan?.maxEmployees?.toString() ?? "");
   const [maxOrders, setMaxOrders] = useState(plan?.maxOrdersPerMonth?.toString() ?? "");
+  const [maxStores, setMaxStores] = useState(plan?.maxStores?.toString() ?? "");
+  const [maxLegalEntities, setMaxLegalEntities] = useState(plan?.maxLegalEntities?.toString() ?? "");
+  const [storageUnlimited, setStorageUnlimited] = useState(plan ? plan.maxStorageMb == null : true);
+  const [maxStorageMb, setMaxStorageMb] = useState(plan?.maxStorageMb?.toString() ?? "1024");
   const [price, setPrice] = useState(plan?.priceMonthly ?? "0");
   const [currency, setCurrency] = useState(plan?.currency ?? "RUB");
   const [features, setFeatures] = useState<Record<string, boolean>>(plan?.features ?? {});
@@ -55,6 +69,9 @@ export function SubscriptionPlanForm({
         name,
         maxEmployees: maxEmployees.trim() ? Number(maxEmployees) : null,
         maxOrdersPerMonth: maxOrders.trim() ? Number(maxOrders) : null,
+        maxStorageMb: storageUnlimited ? null : Number(maxStorageMb) || 0,
+        maxStores: maxStores.trim() ? Number(maxStores) : null,
+        maxLegalEntities: maxLegalEntities.trim() ? Number(maxLegalEntities) : null,
         priceMonthly: Number(price) || 0,
         currency,
         features,
@@ -84,6 +101,47 @@ export function SubscriptionPlanForm({
           <Label>Макс. заказов/мес (пусто = без лимита)</Label>
           <Input type="number" min="1" value={maxOrders} onChange={(e) => setMaxOrders(e.target.value)} />
         </div>
+        <div className="flex flex-col gap-2">
+          <Label>Точки продаж (пусто = без лимита)</Label>
+          <Input type="number" min="1" value={maxStores} onChange={(e) => setMaxStores(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label>Юридические лица (пусто = без лимита)</Label>
+          <Input type="number" min="1" value={maxLegalEntities} onChange={(e) => setMaxLegalEntities(e.target.value)} />
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <Label>Хранилище (вложения, изображения товаров, файлы экспорта)</Label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Checkbox
+              checked={storageUnlimited}
+              onCheckedChange={(v) => setStorageUnlimited(v === true)}
+            />
+            Без лимита
+          </label>
+        </div>
+        {!storageUnlimited && (
+          <div className="flex items-center gap-3">
+            <Slider
+              className="flex-1"
+              min={0}
+              max={STORAGE_SLIDER_MAX_MB}
+              step={STORAGE_SLIDER_STEP_MB}
+              value={Math.min(Number(maxStorageMb) || 0, STORAGE_SLIDER_MAX_MB)}
+              onValueChange={(v) => setMaxStorageMb(String(v))}
+            />
+            <div className="flex w-36 items-center gap-1">
+              <Input
+                type="number"
+                min="0"
+                value={maxStorageMb}
+                onChange={(e) => setMaxStorageMb(e.target.value)}
+              />
+              <span className="text-sm text-muted-foreground">МБ</span>
+            </div>
+          </div>
+        )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-2">

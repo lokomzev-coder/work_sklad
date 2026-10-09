@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { updateOwnProfile, changeOwnPassword, updateOwnDefaults } from "@/actions/profile";
 import { ProfileForm, ChangePasswordForm, DefaultsForm } from "@/components/settings/profile-form";
+import { LinkEmployeeCard } from "@/components/settings/link-employee-card";
 
 /**
  * Block I2.3 — deliberately NOT gated by `assertPermission(ctx.role,
@@ -18,7 +19,7 @@ export default async function ProfilePage({
   const { org } = await params;
   const ctx = await getOrgContext(org);
 
-  const [user, stores, legalEntities, employeeDefaults] = await Promise.all([
+  const [user, stores, legalEntities, employeeDefaults, unlinkedEmployees] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: ctx.userId },
       select: { name: true, email: true },
@@ -31,6 +32,13 @@ export default async function ProfilePage({
           select: { defaultStoreId: true, defaultLegalEntityId: true, openPdfInBrowser: true },
         })
       : null,
+    ctx.employeeId
+      ? []
+      : prisma.employee.findMany({
+          where: { orgId: ctx.orgId, status: "ACTIVE", membership: null },
+          select: { id: true, fullName: true },
+          orderBy: { fullName: "asc" },
+        }),
   ]);
 
   const updateProfileAction = updateOwnProfile.bind(null, org);
@@ -41,6 +49,12 @@ export default async function ProfilePage({
     <div className="flex max-w-lg flex-col gap-4">
       <h1 className="text-2xl font-semibold">Профиль</h1>
       <ProfileForm action={updateProfileAction} defaultValues={user} />
+      {!ctx.employeeId && (
+        <LinkEmployeeCard
+          orgSlug={org}
+          unlinkedEmployees={unlinkedEmployees.map((e) => ({ value: e.id, label: e.fullName }))}
+        />
+      )}
       {ctx.employeeId && (
         <DefaultsForm
           action={updateDefaultsAction}

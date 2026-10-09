@@ -55,7 +55,7 @@ export function NewEmployeeAccessFields({
             <Input id="new-access-login" name="login" placeholder="ivan" required />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="new-access-email">Email для входа</Label>
+            <Label htmlFor="new-access-email">Email (для связи и сброса пароля)</Label>
             <Input id="new-access-email" name="accessEmail" type="email" required />
           </div>
           <div className="flex flex-col gap-2">

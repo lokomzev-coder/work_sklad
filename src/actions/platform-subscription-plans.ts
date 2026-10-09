@@ -14,6 +14,9 @@ const planSchema = z.object({
   name: z.string().trim().min(1, "Укажите название тарифа"),
   maxEmployees: z.coerce.number().int().positive().nullable(),
   maxOrdersPerMonth: z.coerce.number().int().positive().nullable(),
+  maxStorageMb: z.coerce.number().int().positive().nullable(),
+  maxStores: z.coerce.number().int().positive().nullable(),
+  maxLegalEntities: z.coerce.number().int().positive().nullable(),
   priceMonthly: z.coerce.number().min(0, "Цена не может быть отрицательной"),
   currency: z.string().trim().min(1).default("RUB"),
   features: z.record(z.string(), z.boolean()).default({}),
@@ -23,6 +26,9 @@ export interface UpsertSubscriptionPlanInput {
   name: string;
   maxEmployees: number | null;
   maxOrdersPerMonth: number | null;
+  maxStorageMb: number | null;
+  maxStores: number | null;
+  maxLegalEntities: number | null;
   priceMonthly: number;
   currency: string;
   features: Record<string, boolean>;
@@ -48,6 +54,9 @@ export async function upsertSubscriptionPlan(
     name: parsed.data.name,
     maxEmployees: parsed.data.maxEmployees,
     maxOrdersPerMonth: parsed.data.maxOrdersPerMonth,
+    maxStorageMb: parsed.data.maxStorageMb,
+    maxStores: parsed.data.maxStores,
+    maxLegalEntities: parsed.data.maxLegalEntities,
     priceMonthly: parsed.data.priceMonthly,
     currency: parsed.data.currency,
     features: parsed.data.features,

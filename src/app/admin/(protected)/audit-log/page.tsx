@@ -33,10 +33,10 @@ const ACTION_LABEL: Record<string, string> = {
   SUBSCRIPTION_SELF_SERVICE_PURCHASE: "Организация оформила тариф сама",
   SUBSCRIPTION_AUTO_RENEWED: "Автопродление подписки",
   BALANCE_TOPUP: "Пополнение баланса организации",
-  FEATURE_ITEM_CREATED: "Создан пункт конструктора",
-  FEATURE_ITEM_UPDATED: "Изменён пункт конструктора",
-  FEATURE_ITEM_ARCHIVED: "Пункт конструктора архивирован",
-  FEATURE_ITEM_REACTIVATED: "Пункт конструктора восстановлен",
+  FEATURE_ITEM_CREATED: "Создан пункт каталога функций",
+  FEATURE_ITEM_UPDATED: "Изменён пункт каталога функций",
+  FEATURE_ITEM_ARCHIVED: "Пункт каталога функций архивирован",
+  FEATURE_ITEM_REACTIVATED: "Пункт каталога функций восстановлен",
 };
 
 /** Дороже других страниц панели по чувствительности данных — журнал

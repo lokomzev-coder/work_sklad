@@ -169,3 +169,104 @@ export async function createStockMovement(
   revalidatePath(`/${orgSlug}/warehouse/stock`);
   return { movementId: movement.id };
 }
+
+export interface CreateInventoryCorrectionsResult {
+  error?: string;
+  enterMovementId?: string;
+  lossMovementId?: string;
+}
+
+/**
+ * Block W (explicit request, 2026-09-21) — МойСклад's "Создать" →
+ * "Оприходование"/"Списание" from a completed inventory count. The source
+ * INVENTORY document itself has zero ledger effect (lib/stock.ts) — this is
+ * the ONLY thing that actually corrects the stock, by materializing the
+ * discrepancy as a normal ENTER (surplus lines, quantity > 0) and/or LOSS
+ * (shortage lines, quantity < 0) document, each following the exact same
+ * ledger rules as one created by hand via movement-form.tsx. Both are
+ * created already posted, matching how every other manual movement type
+ * (ENTER/LOSS/MOVE) in this app is created — no separate draft step.
+ */
+export async function createInventoryCorrections(
+  orgSlug: string,
+  inventoryId: string,
+): Promise<CreateInventoryCorrectionsResult> {
+  const ctx = await getOrgContext(orgSlug);
+  assertPermission(ctx, "warehouse", "create");
+
+  const inventory = await prisma.stockMovement.findFirst({
+    where: { id: inventoryId, orgId: ctx.orgId, type: "INVENTORY" },
+    include: { lines: true },
+  });
+  if (!inventory) {
+    return { error: "Инвентаризация не найдена" };
+  }
+  if (!inventory.isPosted) {
+    return { error: "Инвентаризация ещё не проведена" };
+  }
+
+  const existingCorrection = await prisma.stockMovement.findFirst({
+    where: { sourceInventoryId: inventoryId },
+  });
+  if (existingCorrection) {
+    return { error: "По этой инвентаризации уже созданы документы" };
+  }
+
+  const surplusLines = inventory.lines.filter((l) => Number(l.quantity) > 0);
+  const shortageLines = inventory.lines.filter((l) => Number(l.quantity) < 0);
+  if (surplusLines.length === 0 && shortageLines.length === 0) {
+    return { error: "Расхождений нет — корректировка не требуется" };
+  }
+
+  let enterMovementId: string | undefined;
+  let lossMovementId: string | undefined;
+
+  if (surplusLines.length > 0) {
+    const number = await nextMovementNumber(ctx.orgId);
+    const created = await prisma.stockMovement.create({
+      data: {
+        orgId: ctx.orgId,
+        type: "ENTER",
+        number,
+        storeId: inventory.storeId,
+        comment: `Оприходование по итогам инвентаризации №${inventory.number}`,
+        sourceInventoryId: inventory.id,
+        lines: {
+          create: surplusLines.map((l) => ({
+            catalogItemId: l.catalogItemId,
+            variantId: l.variantId,
+            quantity: l.quantity,
+          })),
+        },
+      },
+    });
+    enterMovementId = created.id;
+  }
+
+  if (shortageLines.length > 0) {
+    const number = await nextMovementNumber(ctx.orgId);
+    const created = await prisma.stockMovement.create({
+      data: {
+        orgId: ctx.orgId,
+        type: "LOSS",
+        number,
+        storeId: inventory.storeId,
+        comment: `Списание по итогам инвентаризации №${inventory.number}`,
+        sourceInventoryId: inventory.id,
+        lines: {
+          create: shortageLines.map((l) => ({
+            catalogItemId: l.catalogItemId,
+            variantId: l.variantId,
+            quantity: -Number(l.quantity),
+          })),
+        },
+      },
+    });
+    lossMovementId = created.id;
+  }
+
+  revalidatePath(`/${orgSlug}/warehouse`);
+  revalidatePath(`/${orgSlug}/warehouse/${inventoryId}`);
+  revalidatePath(`/${orgSlug}/warehouse/stock`);
+  return { enterMovementId, lossMovementId };
+}

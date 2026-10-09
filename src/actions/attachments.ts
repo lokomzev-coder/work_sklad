@@ -6,6 +6,7 @@ import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
 import type { Resource } from "@/lib/permissions";
 import { saveUploadedFile, deleteStoredFile, MAX_UPLOAD_SIZE } from "@/lib/file-storage";
+import { checkStorageLimit } from "@/lib/subscription";
 
 export interface ActionResult {
   error?: string;
@@ -50,6 +51,11 @@ export async function uploadAttachment(
   }
   if (file.size > MAX_UPLOAD_SIZE) {
     return { error: "Файл больше 10MB" };
+  }
+
+  const storageCheck = await checkStorageLimit(ctx.orgId, file.size);
+  if (!storageCheck.ok) {
+    return { error: storageCheck.error };
   }
 
   let position = 0;

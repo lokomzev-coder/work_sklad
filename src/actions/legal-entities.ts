@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { assertPermission } from "@/lib/permissions";
+import { checkLegalEntityLimit } from "@/lib/subscription";
 import { legalEntitySchema } from "@/lib/validation/legal-entity";
 import { archiveOrDelete } from "@/lib/archive";
 
@@ -42,6 +43,11 @@ export async function createLegalEntity(
 ): Promise<ActionResult> {
   const ctx = await getOrgContext(orgSlug);
   assertPermission(ctx, "legalEntities", "create");
+
+  const limitCheck = await checkLegalEntityLimit(ctx.orgId);
+  if (!limitCheck.ok) {
+    return { error: limitCheck.error };
+  }
 
   const parsed = parseForm(formData);
   if (!parsed.success) {
