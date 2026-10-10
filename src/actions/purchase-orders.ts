@@ -205,9 +205,9 @@ export interface CreateDraftPurchaseOrderFromOrderResult {
  * `supplierId` is left null (nullable on the model) — picked afterwards on
  * the draft's own edit page (`PurchaseOrderForm`), same "create bare
  * skeleton, finish on its own page" idiom as `createDraftDemand`. `unitCost`
- * has no natural default (CatalogItem only tracks a sale `unitPrice`, no
- * purchase cost) — starts at 0, must be filled in before the PO is actually
- * useful, same as picking the supplier.
+ * defaults from `CatalogItem.purchasePrice` where set, 0 otherwise — same
+ * "must be filled in before the PO is actually useful" caveat as before for
+ * items with no purchase price configured yet.
  */
 export async function createDraftPurchaseOrderFromOrder(
   orgSlug: string,
@@ -253,6 +253,12 @@ export async function createDraftPurchaseOrderFromOrder(
     orderLineItems.map((li) => [`${li.catalogItemId}:${li.variantId ?? ""}`, li]),
   );
 
+  const catalogItems = await prisma.catalogItem.findMany({
+    where: { id: { in: [...new Set(remainingLines.map((l) => l.catalogItemId))] } },
+    select: { id: true, purchasePrice: true },
+  });
+  const purchasePriceById = new Map(catalogItems.map((c) => [c.id, c.purchasePrice]));
+
   const poEditScope = ctx.capabilities.purchaseOrders.edit;
   const assignedEmployeeId = poEditScope === "OWN" ? ctx.employeeId : null;
 
@@ -273,7 +279,7 @@ export async function createDraftPurchaseOrderFromOrder(
             catalogItemId: l.catalogItemId,
             variantId: l.variantId,
             quantity: l.quantity,
-            unitPriceSnapshot: 0,
+            unitPriceSnapshot: Number(purchasePriceById.get(l.catalogItemId) ?? 0),
             currency: orderLine?.currency ?? "RUB",
           };
         }),

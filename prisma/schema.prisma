@@ -137,6 +137,7 @@ model Organization {
   legalEntities           LegalEntity[]
   documentStatuses        DocumentStatus[]
   customFieldDefinitions  CustomFieldDefinition[]
+  relatedFieldConfigs     RelatedFieldConfig[]
   exchangeRates           ExchangeRate[]
   webhooks                Webhook[]
   customRoles             CustomRole[]
@@ -518,6 +519,12 @@ model CatalogItem {
   sku        String?
   barcode    String?
   unitPrice  Decimal         @db.Decimal(12, 2)
+  // Cost price for purchasing this item — distinct from unitPrice (the sale
+  // price). Null means not set yet; purchase-order line creation falls back
+  // to leaving the cost field blank for the user to fill in rather than
+  // silently defaulting to the sale price (that was the actual bug report:
+  // PurchaseOrderForm used to default unitCost from unitPrice).
+  purchasePrice Decimal?     @db.Decimal(12, 2)
   currency   String          @default("RUB")
   unitId     String?
   unit       Unit?           @relation(fields: [unitId], references: [id], onDelete: Restrict)
@@ -1934,7 +1941,8 @@ model CustomFieldDefinition {
   customEntityTypeId String?
   customEntityType   CustomEntityType? @relation(fields: [customEntityTypeId], references: [id], onDelete: Restrict)
 
-  values CustomFieldValue[]
+  values              CustomFieldValue[]
+  relatedFieldConfigs RelatedFieldConfig[]
 
   @@unique([orgId, entityType, name])
   @@index([orgId, entityType])
@@ -1952,6 +1960,54 @@ model CustomFieldValue {
 
   @@unique([definitionId, entityId])
   @@index([entityId])
+}
+
+// Lets an org admin pick which EXISTING Client fields — built-in scalars or
+// the org's own CLIENT-scoped CustomFieldDefinitions — are surfaced on a
+// document that references that Client (Order/PurchaseOrder/InvoiceOut/
+// InvoiceIn), both on the document's detail page and in its printout. This
+// is deliberately NOT a new value-storage mechanism: the actual data stays
+// on Client (scalar columns) or CustomFieldValue (entityId = the Client's
+// own id) — this model only records the mapping.
+enum RelatedFieldDocumentType {
+  ORDER
+  PURCHASE_ORDER
+  INVOICE_OUT
+  INVOICE_IN
+}
+
+enum RelatedFieldSourceKind {
+  BUILTIN
+  CUSTOM
+}
+
+model RelatedFieldConfig {
+  id           String                   @id @default(cuid())
+  orgId        String
+  org          Organization             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  documentType RelatedFieldDocumentType
+  sourceKind   RelatedFieldSourceKind
+
+  // Set only when sourceKind = BUILTIN — a key from CLIENT_BUILTIN_FIELDS
+  // (lib/related-fields.ts), e.g. "inn", "phone".
+  fieldKey String?
+
+  // Set only when sourceKind = CUSTOM. Cascade (not SetNull/Restrict): once
+  // the definition is gone there is nothing left for this mapping to point
+  // at, so it is removed along with it — same reasoning as CustomFieldValue
+  // above.
+  customFieldDefinitionId String?
+  customFieldDefinition   CustomFieldDefinition? @relation(fields: [customFieldDefinitionId], references: [id], onDelete: Cascade)
+
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  // No @@unique here: Postgres treats NULL as distinct from NULL, so a
+  // composite unique over the nullable fieldKey/customFieldDefinitionId
+  // columns would only ever protect the CUSTOM side, silently failing to
+  // block duplicate BUILTIN rows — dedup is done explicitly in
+  // actions/related-fields.ts instead.
+  @@index([orgId, documentType])
 }
 
 // --- Block H2: multi-currency --------------------------------------------

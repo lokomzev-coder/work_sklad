@@ -4,6 +4,8 @@ import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { isRowVisible } from "@/lib/scope";
 import { PrintDocument } from "@/components/print/print-document";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function PrintOrderPage({
   params,
@@ -45,6 +47,12 @@ export default async function PrintOrderPage({
   );
   const currency = order.lineItems[0]?.currency ?? "RUB";
 
+  const relatedFieldConfigs = await listRelatedFieldConfigs(ctx.orgId, "ORDER");
+  const clientCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && order.client
+    ? await getCustomFieldValues(order.client.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, order.client, clientCustomFieldValues);
+
   return (
     <PrintDocument
       title={`Заказ покупателя №${order.number}${order.name ? ` — ${order.name}` : ""} от ${order.createdAt.toLocaleDateString("ru-RU")}`}
@@ -78,6 +86,7 @@ export default async function PrintOrderPage({
       total={total.toFixed(2)}
       currency={currency}
       showPrices={showPrices}
+      relatedFields={relatedFields}
     />
   );
 }

@@ -9,6 +9,8 @@ import { PrintDialog } from "@/components/print/print-dialog";
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { ClientRelatedFieldsPanel } from "@/components/clients/client-related-fields-panel";
 import { getComments } from "@/lib/comments";
 import { EventFeed } from "@/components/comments/event-feed";
 import { listAttachments } from "@/lib/attachments";
@@ -54,7 +56,7 @@ export default async function InvoiceOutDetailPage({
     ]),
   );
 
-  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments] = await withDbRetry(
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments, relatedFieldConfigs] = await withDbRetry(
     () =>
       Promise.all([
         prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
@@ -68,9 +70,14 @@ export default async function InvoiceOutDetailPage({
         getCustomFieldValues(invoiceOut.id),
         prisma.payment.findMany({ where: { invoiceOutId: invoiceOut.id }, orderBy: { createdAt: "desc" } }),
         getComments(ctx.orgId, "InvoiceOut", invoiceOut.id, ctx.employeeId),
+        listRelatedFieldConfigs(ctx.orgId, "INVOICE_OUT"),
       ]),
   );
   const attachments = await listAttachments(ctx.orgId, "InvoiceOut", invoiceOut.id);
+  const clientCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && referencedClient
+    ? await getCustomFieldValues(referencedClient.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, referencedClient, clientCustomFieldValues);
 
   const clients = referencedClient
     ? [referencedClient, ...activeClients.filter((c) => c.id !== referencedClient.id)]
@@ -109,6 +116,7 @@ export default async function InvoiceOutDetailPage({
           />
         </div>
       </div>
+      <ClientRelatedFieldsPanel counterpartyLabel="Покупатель" fields={relatedFields} />
       <InvoiceOutForm
         orgSlug={org}
         invoiceOutId={invoiceOut.id}

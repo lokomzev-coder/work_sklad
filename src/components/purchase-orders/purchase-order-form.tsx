@@ -22,6 +22,7 @@ interface CatalogOption {
   id: string;
   name: string;
   unitPrice: string;
+  purchasePrice: string | null;
   currency: string;
   variants: VariantOption[];
 }
@@ -247,7 +248,10 @@ export function PurchaseOrderForm({
                         updateRow(row.key, {
                           catalogItemId: v,
                           variantId: null,
-                          unitCost: row.unitCost || (v ? (catalogById.get(v)?.unitPrice ?? "") : ""),
+                          // Defaults from the item's own purchase price, never the
+                          // sale price — a missing purchasePrice means "ask the
+                          // user", not "assume cost == sale price".
+                          unitCost: row.unitCost || (v ? (catalogById.get(v)?.purchasePrice ?? "") : ""),
                         })
                       }
                       placeholder="Выберите товар/услугу"

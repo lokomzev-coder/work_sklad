@@ -42,6 +42,7 @@ interface CatalogItemFormProps {
     sku: string | null;
     barcode: string | null;
     unitPrice: string | number;
+    purchasePrice?: string | number | null;
     currency: string;
     unitId: string | null;
     groupId: string | null;
@@ -150,6 +151,18 @@ export function CatalogItemForm({
                 min="0"
                 placeholder="0"
                 defaultValue={defaultValues?.unitPrice?.toString()}
+              />
+            </div>
+            <div className="flex flex-1 flex-col gap-2">
+              <Label htmlFor="purchasePrice">Закупочная цена</Label>
+              <Input
+                id="purchasePrice"
+                name="purchasePrice"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Не указана"
+                defaultValue={defaultValues?.purchasePrice?.toString() ?? ""}
               />
             </div>
             <div className="flex w-28 flex-col gap-2">

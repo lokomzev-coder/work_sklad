@@ -139,6 +139,7 @@ export default async function EditCatalogItemPage({
           sku: item.sku,
           barcode: item.barcode,
           unitPrice: item.unitPrice.toString(),
+          purchasePrice: item.purchasePrice?.toString() ?? null,
           currency: item.currency,
           unitId: item.unitId,
           groupId: item.groupId,

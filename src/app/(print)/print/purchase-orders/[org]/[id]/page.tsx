@@ -4,6 +4,8 @@ import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { isRowVisible } from "@/lib/scope";
 import { PrintDocument } from "@/components/print/print-document";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function PrintPurchaseOrderPage({
   params,
@@ -45,6 +47,12 @@ export default async function PrintPurchaseOrderPage({
   );
   const currency = purchaseOrder.lineItems[0]?.currency ?? "RUB";
 
+  const relatedFieldConfigs = await listRelatedFieldConfigs(ctx.orgId, "PURCHASE_ORDER");
+  const supplierCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && purchaseOrder.supplier
+    ? await getCustomFieldValues(purchaseOrder.supplier.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, purchaseOrder.supplier, supplierCustomFieldValues);
+
   return (
     <PrintDocument
       title={`Заказ поставщику №${purchaseOrder.number}${purchaseOrder.name ? ` — ${purchaseOrder.name}` : ""} от ${purchaseOrder.createdAt.toLocaleDateString("ru-RU")}`}
@@ -78,6 +86,7 @@ export default async function PrintPurchaseOrderPage({
       total={total.toFixed(2)}
       currency={currency}
       showPrices={showPrices}
+      relatedFields={relatedFields}
     />
   );
 }

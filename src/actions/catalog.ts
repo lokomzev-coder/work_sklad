@@ -22,6 +22,7 @@ function parseCatalogItemForm(formData: FormData) {
     sku: formData.get("sku"),
     barcode: formData.get("barcode"),
     unitPrice: formData.get("unitPrice"),
+    purchasePrice: formData.get("purchasePrice"),
     currency: formData.get("currency") || "RUB",
     unitId: unitId === "__none__" ? "" : unitId,
     groupId: formData.get("groupId"),
@@ -95,6 +96,7 @@ export async function updateCatalogItem(
       unitId: parsed.data.unitId ?? null,
       groupId: parsed.data.groupId ?? null,
       minStock: parsed.data.minStock ?? null,
+      purchasePrice: parsed.data.purchasePrice ?? null,
     },
   });
   await saveCustomFieldValues(ctx.orgId, "CATALOG_ITEM", itemId, formData);

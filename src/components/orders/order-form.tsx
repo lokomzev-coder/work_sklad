@@ -36,6 +36,11 @@ interface LineItemRow {
   catalogItemId: string | null;
   variantId: string | null;
   quantity: string;
+  // Editable per-line price override — defaults from the catalog item's/
+  // variant's own price when the item/variant is picked, but stays
+  // user-editable afterward (Block: price editing in Order, explicit
+  // request — a sale price sometimes differs from the catalog default).
+  unitPrice: string;
 }
 
 interface OrderFormProps {
@@ -61,13 +66,13 @@ interface OrderFormProps {
     projectId: string | null;
     isPosted: boolean;
     isReserved: boolean;
-    lineItems: { catalogItemId: string; variantId: string | null; quantity: string }[];
+    lineItems: { catalogItemId: string; variantId: string | null; quantity: string; unitPrice: string }[];
     customFieldValues?: Record<string, string>;
   };
 }
 
 function newRow(): LineItemRow {
-  return { key: crypto.randomUUID(), catalogItemId: null, variantId: null, quantity: "1" };
+  return { key: crypto.randomUUID(), catalogItemId: null, variantId: null, quantity: "1", unitPrice: "" };
 }
 
 export function OrderForm({
@@ -116,6 +121,7 @@ export function OrderForm({
           key: crypto.randomUUID(),
           catalogItemId: li.catalogItemId,
           variantId: li.variantId,
+          unitPrice: li.unitPrice,
           quantity: li.quantity,
         }))
       : [newRow()],
@@ -158,13 +164,24 @@ export function OrderForm({
     (c) => c.barcode === trimmedQuery || c.variants.some((v) => v.barcode === trimmedQuery),
   );
 
+  function defaultPriceFor(catalogItemId: string | null, variantId: string | null): string {
+    const item = catalogItemId ? catalogById.get(catalogItemId) : undefined;
+    if (!item) return "";
+    if (variantId) {
+      const variant = item.variants.find((v) => v.id === variantId);
+      if (variant?.price) return variant.price;
+    }
+    return item.unitPrice;
+  }
+
   function addItemRow(catalogItemId: string) {
     setRows((prev) => {
       const blank = prev.find((r) => !r.catalogItemId);
+      const patch = { catalogItemId, variantId: null, unitPrice: defaultPriceFor(catalogItemId, null) };
       if (blank) {
-        return prev.map((r) => (r.key === blank.key ? { ...r, catalogItemId, variantId: null } : r));
+        return prev.map((r) => (r.key === blank.key ? { ...r, ...patch } : r));
       }
-      return [...prev, { ...newRow(), catalogItemId, variantId: null }];
+      return [...prev, { ...newRow(), ...patch }];
     });
     setBarcodeQuery("");
     barcodeInputRef.current?.focus();
@@ -177,20 +194,10 @@ export function OrderForm({
     }
   }
 
-  function lineUnitPrice(row: LineItemRow, item: CatalogOption | undefined): number {
-    if (!item) return 0;
-    if (row.variantId) {
-      const variant = item.variants.find((v) => v.id === row.variantId);
-      if (variant?.price) return Number(variant.price);
-    }
-    return Number(item.unitPrice);
-  }
-
   const total = rows.reduce((sum, row) => {
     if (!row.catalogItemId) return sum;
-    const item = catalogById.get(row.catalogItemId);
     const qty = Number(row.quantity) || 0;
-    return sum + lineUnitPrice(row, item) * qty;
+    return sum + (Number(row.unitPrice) || 0) * qty;
   }, 0);
   const totalCurrency =
     rows.map((row) => (row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined)).find(Boolean)
@@ -215,6 +222,7 @@ export function OrderForm({
         catalogItemId: r.catalogItemId!,
         variantId: r.variantId,
         quantity: Number(r.quantity),
+        unitPrice: Number(r.unitPrice),
       }));
 
     if (lineItems.length === 0) {
@@ -223,6 +231,10 @@ export function OrderForm({
     }
     if (lineItems.some((li) => !Number.isFinite(li.quantity) || li.quantity <= 0)) {
       setError("Количество должно быть больше 0");
+      return;
+    }
+    if (lineItems.some((li) => !Number.isFinite(li.unitPrice) || li.unitPrice < 0)) {
+      setError("Цена не может быть отрицательной");
       return;
     }
 
@@ -399,8 +411,7 @@ export function OrderForm({
           </div>
           {rows.map((row) => {
             const item = row.catalogItemId ? catalogById.get(row.catalogItemId) : undefined;
-            const unitPrice = lineUnitPrice(row, item);
-            const subtotal = unitPrice * (Number(row.quantity) || 0);
+            const subtotal = (Number(row.unitPrice) || 0) * (Number(row.quantity) || 0);
             const variantOptions: ComboboxOption[] =
               item?.variants.map((v) => ({ value: v.id, label: v.label })) ?? [];
 
@@ -411,7 +422,13 @@ export function OrderForm({
                     <EntityCombobox
                       options={catalogItemComboOptions}
                       value={row.catalogItemId}
-                      onChange={(v) => updateRow(row.key, { catalogItemId: v, variantId: null })}
+                      onChange={(v) =>
+                        updateRow(row.key, {
+                          catalogItemId: v,
+                          variantId: null,
+                          unitPrice: defaultPriceFor(v, null),
+                        })
+                      }
                       placeholder="Выберите товар/услугу"
                       emptyMessage="Ничего не найдено"
                     />
@@ -423,6 +440,16 @@ export function OrderForm({
                       step="0.001"
                       value={row.quantity}
                       onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
+                    />
+                  </div>
+                  <div className="w-28">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.unitPrice}
+                      placeholder="Цена"
+                      onChange={(e) => updateRow(row.key, { unitPrice: e.target.value })}
                     />
                   </div>
                   <div className="w-28 shrink-0 text-right text-sm text-muted-foreground">
@@ -443,7 +470,9 @@ export function OrderForm({
                     <EntityCombobox
                       options={variantOptions}
                       value={row.variantId}
-                      onChange={(v) => updateRow(row.key, { variantId: v })}
+                      onChange={(v) =>
+                        updateRow(row.key, { variantId: v, unitPrice: defaultPriceFor(row.catalogItemId, v) })
+                      }
                       placeholder="Выберите модификацию"
                       emptyMessage="Модификации не найдены"
                     />

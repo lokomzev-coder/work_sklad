@@ -9,6 +9,8 @@ import { PrintDialog } from "@/components/print/print-dialog";
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { ClientRelatedFieldsPanel } from "@/components/clients/client-related-fields-panel";
 import { getComments } from "@/lib/comments";
 import { EventFeed } from "@/components/comments/event-feed";
 import { listAttachments } from "@/lib/attachments";
@@ -58,7 +60,7 @@ export default async function InvoiceInDetailPage({
     ]),
   );
 
-  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments] = await withDbRetry(
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, payments, comments, relatedFieldConfigs] = await withDbRetry(
     () =>
       Promise.all([
         prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
@@ -72,8 +74,13 @@ export default async function InvoiceInDetailPage({
         getCustomFieldValues(invoiceIn.id),
         prisma.payment.findMany({ where: { invoiceInId: invoiceIn.id }, orderBy: { createdAt: "desc" } }),
         getComments(ctx.orgId, "InvoiceIn", invoiceIn.id, ctx.employeeId),
+        listRelatedFieldConfigs(ctx.orgId, "INVOICE_IN"),
       ]),
   );
+  const supplierCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && referencedSupplier
+    ? await getCustomFieldValues(referencedSupplier.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, referencedSupplier, supplierCustomFieldValues);
   const attachments = await listAttachments(ctx.orgId, "InvoiceIn", invoiceIn.id);
 
   const suppliers = referencedSupplier
@@ -110,6 +117,7 @@ export default async function InvoiceInDetailPage({
           />
         </div>
       </div>
+      <ClientRelatedFieldsPanel counterpartyLabel="Поставщик" fields={relatedFields} />
       <InvoiceInForm
         orgSlug={org}
         invoiceInId={invoiceIn.id}
@@ -118,6 +126,7 @@ export default async function InvoiceInDetailPage({
           id: c.id,
           name: c.name,
           unitPrice: c.unitPrice.toString(),
+          purchasePrice: c.purchasePrice?.toString() ?? null,
           currency: c.currency,
           variants: c.variants.map((v) => ({
             id: v.id,

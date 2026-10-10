@@ -18,6 +18,10 @@ export const catalogItemSchema = z.object({
   unitPrice: z.coerce
     .number("Укажите цену")
     .min(0, "Цена не может быть отрицательной"),
+  purchasePrice: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.coerce.number().min(0, "Закупочная цена не может быть отрицательной").optional(),
+  ),
   currency: z.string().trim().min(1).max(10).default("RUB"),
   unitId: z
     .string()

@@ -23,6 +23,8 @@ import { CreateSupplyButton } from "@/components/purchase-orders/create-supply-b
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { ClientRelatedFieldsPanel } from "@/components/clients/client-related-fields-panel";
 import { getComments } from "@/lib/comments";
 import { EventFeed } from "@/components/comments/event-feed";
 import { listAttachments } from "@/lib/attachments";
@@ -91,7 +93,7 @@ export default async function EditPurchaseOrderPage({
       ]),
     );
 
-  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues] = await withDbRetry(() =>
+  const [contracts, legalEntities, statusOptions, customFieldDefs, customFieldValues, relatedFieldConfigs] = await withDbRetry(() =>
     Promise.all([
       prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
       prisma.legalEntity.findMany({ where: { orgId: ctx.orgId, status: "ACTIVE" }, orderBy: { name: "asc" } }),
@@ -102,8 +104,13 @@ export default async function EditPurchaseOrderPage({
       }),
       listCustomFieldDefinitions(ctx.orgId, "PURCHASE_ORDER"),
       getCustomFieldValues(purchaseOrder.id),
+      listRelatedFieldConfigs(ctx.orgId, "PURCHASE_ORDER"),
     ]),
   );
+  const supplierCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && referencedSupplier
+    ? await getCustomFieldValues(referencedSupplier.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, referencedSupplier, supplierCustomFieldValues);
 
   const suppliers = referencedSupplier
     ? [referencedSupplier, ...activeSuppliers.filter((c) => c.id !== referencedSupplier.id)]
@@ -207,6 +214,7 @@ export default async function EditPurchaseOrderPage({
           />
         </div>
       </div>
+      <ClientRelatedFieldsPanel counterpartyLabel="Поставщик" fields={relatedFields} />
       <PurchaseOrderForm
         orgSlug={org}
         purchaseOrderId={purchaseOrder.id}
@@ -216,6 +224,7 @@ export default async function EditPurchaseOrderPage({
           id: c.id,
           name: c.name,
           unitPrice: c.unitPrice.toString(),
+          purchasePrice: c.purchasePrice?.toString() ?? null,
           currency: c.currency,
           variants: c.variants.map((v) => ({
             id: v.id,

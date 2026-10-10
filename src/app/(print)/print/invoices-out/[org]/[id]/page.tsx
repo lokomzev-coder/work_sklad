@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getOrgContext } from "@/lib/tenant";
 import { can } from "@/lib/permissions";
 import { PrintDocument } from "@/components/print/print-document";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { getCustomFieldValues } from "@/lib/custom-fields";
 
 export default async function PrintInvoiceOutPage({
   params,
@@ -41,6 +43,12 @@ export default async function PrintInvoiceOutPage({
   );
   const currency = invoiceOut.lineItems[0]?.currency ?? "RUB";
 
+  const relatedFieldConfigs = await listRelatedFieldConfigs(ctx.orgId, "INVOICE_OUT");
+  const clientCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && invoiceOut.client
+    ? await getCustomFieldValues(invoiceOut.client.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, invoiceOut.client, clientCustomFieldValues);
+
   return (
     <PrintDocument
       title={`Счёт покупателю №${invoiceOut.number}${invoiceOut.name ? ` — ${invoiceOut.name}` : ""} от ${invoiceOut.createdAt.toLocaleDateString("ru-RU")}`}
@@ -74,6 +82,7 @@ export default async function PrintInvoiceOutPage({
       total={total.toFixed(2)}
       currency={currency}
       showPrices={showPrices}
+      relatedFields={relatedFields}
     />
   );
 }

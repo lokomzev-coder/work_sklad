@@ -48,6 +48,7 @@ export default async function NewPurchaseOrderPage({
           id: c.id,
           name: c.name,
           unitPrice: c.unitPrice.toString(),
+          purchasePrice: c.purchasePrice?.toString() ?? null,
           currency: c.currency,
           variants: c.variants.map((v) => ({
             id: v.id,

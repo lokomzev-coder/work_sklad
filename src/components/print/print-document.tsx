@@ -31,6 +31,11 @@ interface PrintDocumentProps {
   currency: string;
   /** Default true — omitting this prop leaves existing callers unchanged. */
   showPrices?: boolean;
+  /** Extra Client fields an admin configured to show on this document type
+   * (Settings → "Поля клиента в документах"), pre-resolved to label/value
+   * pairs server-side via lib/related-fields.ts. Optional, so every
+   * existing caller keeps compiling unchanged. */
+  relatedFields?: { label: string; value: string }[];
 }
 
 export function PrintDocument({
@@ -42,6 +47,7 @@ export function PrintDocument({
   total,
   currency,
   showPrices = true,
+  relatedFields,
 }: PrintDocumentProps) {
   return (
     <div className="mx-auto max-w-3xl bg-white p-8 text-black print:p-0">
@@ -83,6 +89,17 @@ export function PrintDocument({
           "—"
         )}
       </div>
+
+      {relatedFields && relatedFields.length > 0 && (
+        <div className="mb-4 text-sm">
+          {relatedFields.map((f, i) => (
+            <div key={i}>
+              <span className="text-gray-500">{f.label}: </span>
+              {f.value}
+            </div>
+          ))}
+        </div>
+      )}
 
       <table className="w-full border-collapse text-sm">
         <thead>

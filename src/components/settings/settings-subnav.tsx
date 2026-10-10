@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 interface SettingsSubnavProps {
   org: string;
-  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "custom-entities" | "webhooks" | "api-keys" | "audit-log" | "price-types" | "discounts" | "expense-items" | "scenarios" | "import" | "roles" | "groups" | "subscription";
+  active: "legal-entities" | "statuses" | "currencies" | "custom-fields" | "related-fields" | "custom-entities" | "webhooks" | "api-keys" | "audit-log" | "price-types" | "discounts" | "expense-items" | "scenarios" | "import" | "roles" | "groups" | "subscription";
 }
 
 const TABS = [
@@ -12,6 +12,7 @@ const TABS = [
   { key: "statuses", label: "Статусы документов", href: "/statuses" },
   { key: "currencies", label: "Валюта", href: "/currencies" },
   { key: "custom-fields", label: "Доп. поля", href: "/custom-fields" },
+  { key: "related-fields", label: "Поля клиента в документах", href: "/related-fields" },
   { key: "custom-entities", label: "Справочники", href: "/custom-entities" },
   { key: "price-types", label: "Типы цен", href: "/price-types" },
   { key: "discounts", label: "Скидки", href: "/discounts" },

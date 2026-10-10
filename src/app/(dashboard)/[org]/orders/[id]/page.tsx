@@ -20,6 +20,8 @@ import {
 import { variantLabel } from "@/lib/catalog-variants";
 import { getSelectableStatuses } from "@/lib/document-statuses";
 import { listCustomFieldDefinitions, getCustomFieldValues } from "@/lib/custom-fields";
+import { listRelatedFieldConfigs, resolveRelatedFields } from "@/lib/related-fields";
+import { ClientRelatedFieldsPanel } from "@/components/clients/client-related-fields-panel";
 import { computeOrderPaymentStatus } from "@/lib/orders";
 import { Badge } from "@/components/ui/badge";
 import { formatMoney } from "@/lib/format";
@@ -101,7 +103,7 @@ export default async function EditOrderPage({
       ]),
     );
 
-  const [contracts, salesChannels, legalEntities, statusOptions, customFieldDefs, customFieldValues] =
+  const [contracts, salesChannels, legalEntities, statusOptions, customFieldDefs, customFieldValues, relatedFieldConfigs] =
     await withDbRetry(() =>
       Promise.all([
         prisma.contract.findMany({ where: { orgId: ctx.orgId }, orderBy: { number: "asc" } }),
@@ -114,8 +116,16 @@ export default async function EditOrderPage({
         }),
         listCustomFieldDefinitions(ctx.orgId, "ORDER"),
         getCustomFieldValues(order.id),
+        listRelatedFieldConfigs(ctx.orgId, "ORDER"),
       ]),
     );
+  // Settings → "Поля клиента в документах" — a separate getCustomFieldValues
+  // call keyed by the CLIENT's own id, not the order's (distinct value set
+  // from customFieldValues above). Only fetched when actually needed.
+  const clientCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && referencedClient
+    ? await getCustomFieldValues(referencedClient.id)
+    : {};
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, referencedClient, clientCustomFieldValues);
 
   // Archived entities stay out of the "pick something new" list, but an
   // already-referenced archived entity must still render (its FK is valid).
@@ -245,6 +255,7 @@ export default async function EditOrderPage({
             : `Оплачено ${formatMoney(paymentStatus.totalPaid, paymentStatus.currency)} из ${formatMoney(paymentStatus.totalOrder, paymentStatus.currency)}`}
         </Badge>
       </div>
+      <ClientRelatedFieldsPanel counterpartyLabel="Покупатель" fields={relatedFields} />
       <OrderForm
         orgSlug={org}
         orderId={order.id}
@@ -287,6 +298,7 @@ export default async function EditOrderPage({
             catalogItemId: li.catalogItemId,
             variantId: li.variantId,
             quantity: li.quantity.toString(),
+            unitPrice: li.unitPriceSnapshot.toString(),
           })),
           customFieldValues,
         }}

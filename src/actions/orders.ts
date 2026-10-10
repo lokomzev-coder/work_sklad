@@ -15,6 +15,9 @@ const lineItemSchema = z.object({
   catalogItemId: z.string().min(1),
   variantId: z.string().min(1).nullable().optional(),
   quantity: z.coerce.number().positive("Количество должно быть больше 0"),
+  // Explicit per-line override — when omitted, falls back to the catalog
+  // item's/variant's own price exactly as before this field existed.
+  unitPrice: z.coerce.number("Укажите цену").min(0, "Цена не может быть отрицательной").optional(),
 });
 
 const upsertOrderSchema = z.object({
@@ -42,7 +45,7 @@ export interface UpsertOrderInput {
   projectId?: string | null;
   isPosted?: boolean;
   isReserved?: boolean;
-  lineItems: { catalogItemId: string; variantId?: string | null; quantity: number }[];
+  lineItems: { catalogItemId: string; variantId?: string | null; quantity: number; unitPrice?: number }[];
   customFieldValues?: Record<string, string>;
 }
 
@@ -173,8 +176,10 @@ export async function upsertOrder(
       variantId: li.variantId ?? undefined,
       quantity: li.quantity,
       // price is snapshotted at order time, so later catalog price edits
-      // don't retroactively change already-placed orders
-      unitPriceSnapshot: variant?.priceOverride ?? priceById.get(li.catalogItemId)!,
+      // don't retroactively change already-placed orders. An explicit
+      // per-line unitPrice (manual override, editable in OrderForm) wins
+      // over the catalog/variant default when present.
+      unitPriceSnapshot: li.unitPrice ?? variant?.priceOverride ?? priceById.get(li.catalogItemId)!,
       currency: currencyById.get(li.catalogItemId)!,
     };
   });
