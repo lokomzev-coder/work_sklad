@@ -23,7 +23,7 @@ export default async function NewTechCardPage({
   ]);
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
+    <div className="flex max-w-6xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая технологическая карта</h1>
       <TechCardForm
         orgSlug={org}

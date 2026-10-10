@@ -53,32 +53,28 @@ export interface ClientBuiltinFieldSource {
 
 /** Resolves configured defs against one Client row + that Client's own
  * CustomFieldValue map (same shape getCustomFieldValues already returns —
- * keyed by definitionId) into an ordered, display-ready list. Configs that
- * resolve to an empty value are omitted — matches PrintDocument's own
- * `issuer.inn && ...`-style convention for optional requisites. The one
- * exception is BOOLEAN custom fields, where "false" is a real answer, not
- * an empty one — only a value that was never saved at all (undefined) is
- * skipped there. */
+ * keyed by definitionId) into an ordered, display-ready list. Every
+ * configured field is always included, even with a blank value (shown as
+ * "—") — an earlier version omitted blank fields entirely, which silently
+ * hid the whole panel whenever a client had none of the configured fields
+ * filled in yet, making the feature look broken/not-wired-up instead of
+ * "configured but no data on this client". Always showing the label lets
+ * the admin see at a glance that the configuration took effect. */
 export function resolveRelatedFields(
   defs: RelatedFieldDef[],
   client: ClientBuiltinFieldSource | null,
   customFieldValues: Record<string, string>,
 ): { label: string; value: string }[] {
   if (!client) return [];
-  const result: { label: string; value: string }[] = [];
-  for (const def of defs) {
+  return defs.map((def) => {
     if (def.sourceKind === "BUILTIN") {
       const raw = def.fieldKey ? client[def.fieldKey as keyof ClientBuiltinFieldSource] : null;
-      if (raw && raw.trim()) result.push({ label: def.label, value: raw });
-      continue;
+      return { label: def.label, value: raw && raw.trim() ? raw : "—" };
     }
     const raw = def.customFieldDefinitionId ? customFieldValues[def.customFieldDefinitionId] : undefined;
     if (def.customFieldType === "BOOLEAN") {
-      if (raw === undefined) continue;
-      result.push({ label: def.label, value: raw === "true" ? "Да" : "Нет" });
-      continue;
+      return { label: def.label, value: raw === undefined ? "—" : raw === "true" ? "Да" : "Нет" };
     }
-    if (raw && raw.trim()) result.push({ label: def.label, value: raw });
-  }
-  return result;
+    return { label: def.label, value: raw && raw.trim() ? raw : "—" };
+  });
 }

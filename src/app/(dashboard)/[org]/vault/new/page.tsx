@@ -19,7 +19,7 @@ export default async function NewVaultEntryPage({
   const boundAction = createVaultEntry.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая запись сервиса</h1>
       <VaultEntryForm orgSlug={org} action={boundAction} submitLabel="Создать" />
     </div>

@@ -13,7 +13,7 @@ export default async function NewRolePage({
   if (!can(ctx, "customRoles", "create")) notFound();
 
   return (
-    <div className="flex max-w-sm flex-col gap-4">
+    <div className="flex max-w-xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая роль</h1>
       <NewRoleForm orgSlug={org} />
     </div>

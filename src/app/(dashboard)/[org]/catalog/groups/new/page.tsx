@@ -23,7 +23,7 @@ export default async function NewCatalogGroupPage({
   }));
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая группа</h1>
       <CatalogGroupForm
         orgSlug={org}

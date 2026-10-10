@@ -51,7 +51,13 @@ export default async function PrintOrderPage({
   const clientCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && order.client
     ? await getCustomFieldValues(order.client.id)
     : {};
-  const relatedFields = resolveRelatedFields(relatedFieldConfigs, order.client, clientCustomFieldValues);
+  // Unlike the detail-page panel, a printed document omits blank
+  // configured fields entirely rather than showing "—" — the panel's "—"
+  // is a configuration-confirmation signal for the admin, not something
+  // that belongs on a document handed to a customer.
+  const relatedFields = resolveRelatedFields(relatedFieldConfigs, order.client, clientCustomFieldValues).filter(
+    (f) => f.value !== "—",
+  );
 
   return (
     <PrintDocument

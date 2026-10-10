@@ -16,7 +16,7 @@ export default async function NewLegalEntityPage({
   const boundAction = createLegalEntity.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <SettingsSubnav org={org} active="legal-entities" />
       <h1 className="text-2xl font-semibold">Новое юрлицо</h1>
       <LegalEntityForm orgSlug={org} action={boundAction} submitLabel="Создать" />

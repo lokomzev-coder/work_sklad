@@ -34,7 +34,7 @@ export default async function TechCardsPage({
   return (
     <div className="flex flex-col gap-4">
       <ProductionSubnav org={org} active="tech-cards" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Технологические карты</h1>
         {canEdit && (
           <Button render={<Link href={`/${org}/production/tech-cards/new`} />}>Новая техкарта</Button>

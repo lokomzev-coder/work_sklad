@@ -34,7 +34,7 @@ export default async function ContractsPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Договоры</h1>
         {canCreate && (
           <Button render={<Link href={`/${org}/contracts/new`} />}>Новый договор</Button>

@@ -37,7 +37,7 @@ export default async function RolesPage({
   return (
     <div className="flex flex-col gap-6">
       <SettingsSubnav org={org} active="roles" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Роли доступа</h1>
           <p className="text-sm text-muted-foreground">

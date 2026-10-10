@@ -86,8 +86,8 @@ export default async function PickingWaveDetailPage({
   });
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex max-w-6xl flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Волна отбора №{wave.number}</h1>
         {can(ctx, "warehouse", "create") && <CreateWaveDemandsButton orgSlug={org} waveId={wave.id} />}
       </div>

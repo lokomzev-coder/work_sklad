@@ -23,7 +23,7 @@ export default async function EditLegalEntityPage({
   const boundAction = updateLegalEntity.bind(null, org, id);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <SettingsSubnav org={org} active="legal-entities" />
       <h1 className="text-2xl font-semibold">{legalEntity.name}</h1>
       <LegalEntityForm

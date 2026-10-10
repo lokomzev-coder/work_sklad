@@ -28,7 +28,7 @@ export default async function InvoicesInPage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Счета поставщиков</h1>
         {canCreate && (
           <Button render={<Link href={`/${org}/invoices-in/new`} />}>Новый счёт</Button>

@@ -30,7 +30,7 @@ export default async function PriceListPage({
       <div className="print:hidden">
         <CatalogSubnav org={org} active="price-list" />
       </div>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Прайс-лист</h1>
           <p className="text-sm text-muted-foreground print:hidden">

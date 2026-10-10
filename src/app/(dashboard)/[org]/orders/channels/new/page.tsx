@@ -10,7 +10,7 @@ export default async function NewSalesChannelPage({
   const boundAction = createSalesChannel.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новый канал продаж</h1>
       <SalesChannelForm orgSlug={org} action={boundAction} />
     </div>

@@ -164,7 +164,7 @@ export default async function ReportsOverviewPage({
         </Card>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-muted-foreground">Показывать топ:</span>
         {TOP_N_OPTIONS.map((n) => {
           const tabQs = new URLSearchParams(qs);

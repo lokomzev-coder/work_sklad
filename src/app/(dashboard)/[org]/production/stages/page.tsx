@@ -33,7 +33,7 @@ export default async function ProcessingStagesPage({
   return (
     <div className="flex flex-col gap-4">
       <ProductionSubnav org={org} active="stages" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Этапы производства</h1>
         {canEdit && <Button render={<Link href={`/${org}/production/stages/new`} />}>Новый этап</Button>}
       </div>

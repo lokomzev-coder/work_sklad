@@ -23,7 +23,7 @@ export default async function EditStorePage({
   const boundAction = updateStore.bind(null, org, store.id);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">{store.name}</h1>
       <StoreForm
         orgSlug={org}

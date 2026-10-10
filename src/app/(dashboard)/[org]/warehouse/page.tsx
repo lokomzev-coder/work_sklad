@@ -79,7 +79,7 @@ export default async function WarehouseMovementsPage({
   return (
     <div className="flex flex-col gap-4">
       <WarehouseSubnav org={org} active="movements" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Складские движения</h1>
         {canCreate && (
           <DropdownMenu>

@@ -34,7 +34,7 @@ export default async function CharacteristicsPage({
   return (
     <div className="flex flex-col gap-4">
       <CatalogSubnav org={org} active="characteristics" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Характеристики</h1>
         {canEdit && (
           <Button render={<Link href={`/${org}/catalog/characteristics/new`} />}>

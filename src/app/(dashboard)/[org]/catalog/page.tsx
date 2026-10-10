@@ -54,9 +54,9 @@ export default async function CatalogPage({
   return (
     <div className="flex flex-col gap-4">
       <CatalogSubnav org={org} active="catalog" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Товары и услуги</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canImport && <ImportWizard orgSlug={org} />}
           {canEdit && (
             <Button render={<Link href={`/${org}/catalog/new`} />}>

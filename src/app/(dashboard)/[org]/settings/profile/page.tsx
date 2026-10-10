@@ -46,7 +46,7 @@ export default async function ProfilePage({
   const updateDefaultsAction = updateOwnDefaults.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Профиль</h1>
       <ProfileForm action={updateProfileAction} defaultValues={user} />
       {!ctx.employeeId && (

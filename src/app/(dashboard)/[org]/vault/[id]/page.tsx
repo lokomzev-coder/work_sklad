@@ -60,7 +60,7 @@ export default async function VaultEntryPage({
   const boundAction = updateVaultEntry.bind(null, org, entry.id);
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
+    <div className="flex max-w-6xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">{entry.serviceName}</h1>
 
       {entry.tags.length > 0 && (

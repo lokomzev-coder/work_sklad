@@ -140,7 +140,7 @@ export default async function OrgDashboardPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Дашборд</h1>
         <Link href={`/${org}/reports/overview`} className="text-sm text-primary hover:underline">
           Полная отчётность →

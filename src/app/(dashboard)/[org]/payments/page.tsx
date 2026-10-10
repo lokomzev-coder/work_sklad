@@ -39,7 +39,7 @@ export default async function PaymentsPage({
   return (
     <div className="flex flex-col gap-4">
       <PaymentsSubnav org={org} active="payments" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Платежи</h1>
         {canCreate && (
           <Button render={<Link href={`/${org}/payments/new`} />}>Записать платёж</Button>

@@ -34,7 +34,7 @@ export default async function UnitsPage({
   return (
     <div className="flex flex-col gap-4">
       <CatalogSubnav org={org} active="units" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Единицы измерения</h1>
         {canEdit && (
           <Button render={<Link href={`/${org}/catalog/units/new`} />}>

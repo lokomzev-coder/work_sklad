@@ -24,7 +24,7 @@ export default async function EditTechProcessPage({
   if (!techProcess) notFound();
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
+    <div className="flex max-w-6xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">{techProcess.name}</h1>
       <TechProcessForm
         orgSlug={org}

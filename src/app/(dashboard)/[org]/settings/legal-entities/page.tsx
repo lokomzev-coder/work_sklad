@@ -37,7 +37,7 @@ export default async function LegalEntitiesPage({
   return (
     <div className="flex flex-col gap-4">
       <SettingsSubnav org={org} active="legal-entities" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Юрлица</h1>
         {canEdit && (
           <Button render={<Link href={`/${org}/settings/legal-entities/new`} />}>

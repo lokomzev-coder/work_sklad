@@ -93,13 +93,13 @@ export default async function InvoiceOutDetailPage({
   const currency = invoiceOut.lineItems[0]?.currency ?? "RUB";
 
   return (
-    <div className="flex max-w-2xl flex-col gap-4">
-      <div className="flex items-center justify-between">
+    <div className="flex max-w-6xl flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">
           Счёт №{invoiceOut.number}
           {invoiceOut.name ? <span className="text-muted-foreground"> — {invoiceOut.name}</span> : null}
         </h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <PrintDialog
             documentType="invoiceOut"
             orgSlug={org}

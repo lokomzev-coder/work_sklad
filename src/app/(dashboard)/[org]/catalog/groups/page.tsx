@@ -36,7 +36,7 @@ export default async function CatalogGroupsPage({
   return (
     <div className="flex flex-col gap-4">
       <CatalogSubnav org={org} active="groups" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Группы товаров</h1>
         {canEdit && (
           <Button render={<Link href={`/${org}/catalog/groups/new`} />}>

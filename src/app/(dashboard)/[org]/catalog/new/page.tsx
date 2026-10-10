@@ -21,7 +21,7 @@ export default async function NewCatalogItemPage({
   ]);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая позиция</h1>
       <CatalogItemForm
         orgSlug={org}

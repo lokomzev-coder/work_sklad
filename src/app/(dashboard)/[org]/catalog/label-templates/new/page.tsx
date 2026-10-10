@@ -37,7 +37,7 @@ export default async function NewLabelTemplatePage({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Конструктор этикеток</h1>
         <CreateDefaultLabelTemplateButton orgSlug={org} />
       </div>

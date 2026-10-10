@@ -44,7 +44,7 @@ export default async function ProductionOrdersPage({
   return (
     <div className="flex flex-col gap-4">
       <ProductionSubnav org={org} active="tasks" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Производственные задания</h1>
         {canCreate && (
           <Button render={<Link href={`/${org}/production/new`} />}>Новое задание</Button>

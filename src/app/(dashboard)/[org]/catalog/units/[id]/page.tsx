@@ -23,7 +23,7 @@ export default async function EditUnitPage({
   const boundAction = updateUnit.bind(null, org, unit.id);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">{unit.name}</h1>
       <UnitForm
         orgSlug={org}

@@ -40,7 +40,7 @@ export default async function OrdersPage({
   return (
     <div className="flex flex-col gap-4">
       <OrdersSubnav org={org} active="orders" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">Заказы</h1>
         {canCreate && (
           <Button render={<Link href={`/${org}/orders/new`} />}>

@@ -10,7 +10,7 @@ export default async function NewUnitPage({
   const boundAction = createUnit.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая единица измерения</h1>
       <UnitForm orgSlug={org} action={boundAction} submitLabel="Создать" />
     </div>

@@ -23,7 +23,7 @@ export default async function NewTaskPage({
   const boundAction = createTask.bind(null, org);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">Новая задача</h1>
       <TaskForm orgSlug={org} employees={employees} action={boundAction} />
     </div>

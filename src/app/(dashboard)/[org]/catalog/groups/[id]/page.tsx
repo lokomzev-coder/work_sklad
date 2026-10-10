@@ -51,7 +51,7 @@ export default async function EditCatalogGroupPage({
   const boundAction = updateCatalogGroup.bind(null, org, group.id);
 
   return (
-    <div className="flex max-w-lg flex-col gap-4">
+    <div className="flex max-w-3xl flex-col gap-4">
       <h1 className="text-2xl font-semibold">{group.name}</h1>
       <CatalogGroupForm
         orgSlug={org}

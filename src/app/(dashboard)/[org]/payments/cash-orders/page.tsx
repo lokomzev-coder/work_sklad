@@ -42,7 +42,7 @@ export default async function CashOrdersPage({
   return (
     <div className="flex flex-col gap-4">
       <PaymentsSubnav org={org} active="cash-orders" />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold">Кассовые ордера</h1>
           <p className="text-sm text-muted-foreground">

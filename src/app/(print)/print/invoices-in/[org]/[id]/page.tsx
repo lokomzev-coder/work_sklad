@@ -47,7 +47,15 @@ export default async function PrintInvoiceInPage({
   const supplierCustomFieldValues = relatedFieldConfigs.some((c) => c.sourceKind === "CUSTOM") && invoiceIn.supplier
     ? await getCustomFieldValues(invoiceIn.supplier.id)
     : {};
-  const relatedFields = resolveRelatedFields(relatedFieldConfigs, invoiceIn.supplier, supplierCustomFieldValues);
+  // Unlike the detail-page panel, a printed document omits blank
+  // configured fields entirely rather than showing "—" — the panel's "—"
+  // is a configuration-confirmation signal for the admin, not something
+  // that belongs on a document handed to a customer.
+  const relatedFields = resolveRelatedFields(
+    relatedFieldConfigs,
+    invoiceIn.supplier,
+    supplierCustomFieldValues,
+  ).filter((f) => f.value !== "—");
 
   return (
     <PrintDocument
